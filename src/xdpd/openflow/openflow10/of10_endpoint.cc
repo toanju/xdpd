@@ -56,7 +56,7 @@ of10_endpoint::handle_features_request(
 	of1x_switch_snapshot_t* of10switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of10switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 		
 	uint32_t num_of_tables 	= 0;
 	uint32_t num_of_buffers = 0;
@@ -142,7 +142,7 @@ of10_endpoint::handle_get_config_request(
 	of1x_switch_snapshot_t* of10switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of10switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 	
 	flags = of10switch->pipeline.capabilities;
 	miss_send_len = of10switch->pipeline.miss_send_len;
@@ -189,7 +189,7 @@ of10_endpoint::handle_table_stats_request(
 	of1x_switch_snapshot_t* of10switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of10switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 	
 	num_of_tables = of10switch->pipeline.num_of_tables;
 	
@@ -235,7 +235,7 @@ of10_endpoint::handle_port_stats_request(
 	of1x_switch_snapshot_t* of10switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of10switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 	
 	rofl::openflow::cofportstatsarray portstatsarray(ctl.get_version_negotiated());
 
@@ -322,7 +322,7 @@ of10_endpoint::handle_flow_stats_request(
 	of1x_switch_snapshot_t* of10switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of10switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 	//Map the match structure from OpenFlow to of1x_packet_matches_t
 	entry = of1x_init_flow_entry(false);
@@ -491,7 +491,7 @@ of10_endpoint::handle_queue_stats_request(
 	of1x_switch_snapshot_t* of10switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of10switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 	if( ((portnum >= of10switch->max_ports) && (portnum != openflow10::OFPP_ALL)) || portnum == 0){
 		//Destroy the snapshot
@@ -1076,7 +1076,7 @@ of10_endpoint::handle_port_mod(
 	of1x_switch_snapshot_t* of10switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of10switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 	//Check if port_num FLOOD
 	//TODO: Inspect if this is right. Spec does not clearly define if this should be supported or not
@@ -1205,7 +1205,7 @@ of10_endpoint::handle_queue_get_config_request(
 	of1x_switch_snapshot_t* of10switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of10switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 	rofl::openflow::cofpacket_queues queues(ctl.get_version_negotiated());
 

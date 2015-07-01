@@ -41,7 +41,7 @@ of13_endpoint::handle_features_request(
 	of1x_switch_snapshot_t* of13switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of13switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 	
 	uint32_t num_of_tables 	= of13switch->pipeline.num_of_tables;
 	uint32_t num_of_buffers = of13switch->pipeline.num_of_buffers;
@@ -71,7 +71,7 @@ of13_endpoint::handle_get_config_request(
 	of1x_switch_snapshot_t* of13switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of13switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 	
 	uint16_t flags 			= of13switch->pipeline.capabilities;
 	uint16_t miss_send_len 	= of13switch->pipeline.miss_send_len;
@@ -471,7 +471,7 @@ of13_endpoint::handle_table_stats_request(
 	of1x_switch_snapshot_t* of13switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of13switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 	
 	unsigned int num_of_tables = of13switch->pipeline.num_of_tables;
 	rofl::openflow::coftablestatsarray tablestatsarray(ctl.get_version_negotiated());
@@ -508,7 +508,7 @@ of13_endpoint::handle_port_stats_request(
 	of1x_switch_snapshot_t* of13switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of13switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 	rofl::openflow::cofportstatsarray portstatsarray(ctl.get_version_negotiated());
 
@@ -605,7 +605,7 @@ of13_endpoint::handle_queue_stats_request(
 	of1x_switch_snapshot_t* of13switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of13switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 
 	if( ((portnum >= of13switch->max_ports) && (portnum != openflow13::OFPP_ANY)) || portnum == 0){
@@ -855,7 +855,7 @@ of13_endpoint::handle_table_features_stats_request(
 	of1x_switch_snapshot_t* of13switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of13switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 	unsigned int num_of_tables = of13switch->pipeline.num_of_tables;
 	for (unsigned int n = 0; n < num_of_tables; n++) {
@@ -915,7 +915,7 @@ of13_endpoint::handle_port_desc_stats_request(
 	of1x_switch_snapshot_t* of13switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of13switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 	// array of structures ofp_port
 	rofl::openflow::cofports ports(ctl.get_version_negotiated());
@@ -1398,7 +1398,7 @@ of13_endpoint::handle_port_mod(
 
 		of1x_switch_snapshot_t* of13switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 		if(!of13switch)
-			throw rofl::eRofBase();
+			throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 		//we check all the positions in case there are empty slots
 		for (unsigned int n = 1; n < of13switch->max_ports; n++){
 			logical_switch_port_t* ls_port = &of13switch->logical_ports[n];
@@ -1494,7 +1494,7 @@ of13_endpoint::handle_queue_get_config_request(
 	of1x_switch_snapshot_t* of13switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of13switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 
 	rofl::openflow::cofpacket_queues queues(ctl.get_version_negotiated());

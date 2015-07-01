@@ -45,7 +45,7 @@ of12_endpoint::handle_features_request(
 	of1x_switch_snapshot_t* of12switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of12switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 	
 	uint32_t num_of_tables 	= 0;
 	uint32_t num_of_buffers = 0;
@@ -127,7 +127,7 @@ of12_endpoint::handle_get_config_request(
 	of1x_switch_snapshot_t* of12switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of12switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 	
 	flags = of12switch->pipeline.capabilities;
 	miss_send_len = of12switch->pipeline.miss_send_len;
@@ -177,7 +177,7 @@ of12_endpoint::handle_table_stats_request(
 	of1x_switch_snapshot_t* of12switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of12switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 	
 	num_of_tables = of12switch->pipeline.num_of_tables;
 	rofl::openflow::coftablestatsarray tablestatsarray(ctl.get_version_negotiated());
@@ -227,7 +227,7 @@ of12_endpoint::handle_port_stats_request(
 	of1x_switch_snapshot_t* of12switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of12switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 	rofl::openflow::cofportstatsarray portstatsarray(ctl.get_version_negotiated());
 
@@ -459,7 +459,7 @@ of12_endpoint::handle_queue_stats_request(
 	of1x_switch_snapshot_t* of12switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of12switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 
 	if( ((portnum >= of12switch->max_ports) && (portnum != openflow12::OFPP_ALL)) || portnum == 0){
@@ -1340,7 +1340,7 @@ of12_endpoint::handle_queue_get_config_request(
 	of1x_switch_snapshot_t* of12switch = (of1x_switch_snapshot_t*)hal_driver_get_switch_snapshot_by_dpid(sw->dpid);
 
 	if(!of12switch)
-		throw rofl::eRofBase();
+		throw rofl::eRofBase("hal_driver_get_switch_snapshot_by_dpid failed");
 
 
 	rofl::openflow::cofpacket_queues queues(ctl.get_version_negotiated());
