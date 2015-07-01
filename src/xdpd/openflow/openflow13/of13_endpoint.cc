@@ -1275,26 +1275,26 @@ of13_endpoint::handle_group_mod(
 	rofl_of1x_gm_result_t ret_val;
  	of1x_bucket_list_t* bucket_list=of1x_init_bucket_list();
 	
-	switch(msg.get_command()){
+	switch(msg.get_groupmod().get_command()){
 		case openflow13::OFPGC_ADD:
-			of13_translation_utils::of13_map_bucket_list(&ctl, sw, msg.get_buckets(), bucket_list);
-			ret_val = hal_driver_of1x_group_mod_add(sw->dpid, (of1x_group_type_t)msg.get_group_type(), msg.get_group_id(), &bucket_list);
+			of13_translation_utils::of13_map_bucket_list(&ctl, sw, msg.get_groupmod().get_buckets(), bucket_list);
+			ret_val = hal_driver_of1x_group_mod_add(sw->dpid, (of1x_group_type_t)msg.get_groupmod().get_type(), msg.get_groupmod().get_group_id(), &bucket_list);
 			break;
 			
 		case openflow13::OFPGC_MODIFY:
-			of13_translation_utils::of13_map_bucket_list(&ctl, sw, msg.get_buckets(), bucket_list);
-			ret_val = hal_driver_of1x_group_mod_modify(sw->dpid, (of1x_group_type_t)msg.get_group_type(), msg.get_group_id(), &bucket_list);
+			of13_translation_utils::of13_map_bucket_list(&ctl, sw, msg.get_groupmod().get_buckets(), bucket_list);
+			ret_val = hal_driver_of1x_group_mod_modify(sw->dpid, (of1x_group_type_t)msg.get_groupmod().get_type(), msg.get_groupmod().get_group_id(), &bucket_list);
 			break;
 		
 		case openflow13::OFPGC_DELETE:
-			ret_val = hal_driver_of1x_group_mod_delete(sw->dpid, msg.get_group_id());
+			ret_val = hal_driver_of1x_group_mod_delete(sw->dpid, msg.get_groupmod().get_group_id());
 			break;
 		
 		default:
 			ret_val = ROFL_OF1X_GM_BCOMMAND;
 			break;
 	}
-	if( (ret_val != ROFL_OF1X_GM_OK) || (msg.get_command() == openflow13::OFPGC_DELETE) )
+	if( (ret_val != ROFL_OF1X_GM_OK) || (msg.get_groupmod().get_command() == openflow13::OFPGC_DELETE) )
 		of1x_destroy_bucket_list(bucket_list);
 	
 	//Throw appropiate exception based on the return code

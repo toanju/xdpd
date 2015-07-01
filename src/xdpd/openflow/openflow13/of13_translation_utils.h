@@ -73,7 +73,7 @@ public:
 	/**
 	 * Maps a of13_group_bucket from an OF1.3 Header
 	 */
-	static void of13_map_bucket_list(crofctl *ctl, openflow_switch* sw, rofl::openflow::cofbuckets& of_buckets, of1x_bucket_list_t* bucket_list);
+	static void of13_map_bucket_list(crofctl *ctl, openflow_switch* sw, const rofl::openflow::cofbuckets& of_buckets, of1x_bucket_list_t* bucket_list);
 
 	/**
 	 * Reverse maps a bucket list 
