@@ -7,7 +7,7 @@ of_endpoint::of_endpoint(
 			rofl::openflow::cofhello_elem_versionbitmap const& versionbitmap,
 			enum rofl::csocket::socket_type_t socket_type,
 			const rofl::cparams& socket_params) :
-				crofbase(versionbitmap, system_manager::ciosrv_thread),
+				crofbase(versionbitmap),
 				sw(NULL),
 				versionbitmap(versionbitmap),
 				socket_type(socket_type),
