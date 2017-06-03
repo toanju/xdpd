@@ -5,6 +5,7 @@
 #include <sstream>
 #include <iomanip>
 #include "assert.h"
+#include "../config_rss.h"
 #include "../util/compiler_assert.h"
 #include "../io/rx.h"
 #include "../io/tx.h"
@@ -13,8 +14,7 @@
 #include "../io/iface_manager.h"
 #include <rofl/datapath/pipeline/openflow/of_switch.h>
 
-//Pool sizes
-extern unsigned int mbuf_pool_size;
+extern unsigned int mbuf_pool_size; //Pool sizes
 
 //Wrong CPU socket overhead weight
 #define WRONG_CPU_SOCK_OH 0x80000000;
@@ -161,14 +161,14 @@ static void processing_wait_for_cores_to_sync(){
 
 int processing_core_process_packets(void* not_used){
 
-	unsigned int i, l, core_id;
+	unsigned int i, l, core_id = rte_lcore_id();
 	int j;
 	bool own_port;
 	switch_port_t* port;
 	port_bursts_t* port_bursts;
         uint64_t diff_tsc, prev_tsc;
 	struct rte_mbuf* pkt_burst[IO_IFACE_MAX_PKT_BURST]={0};
-	core_tasks_t* tasks = &processing_core_tasks[rte_lcore_id()];
+	core_tasks_t* tasks = &processing_core_tasks[core_id];
 
 	//Time to drain in tics
 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S * IO_BURST_TX_DRAIN_US;
@@ -189,6 +189,8 @@ int processing_core_process_packets(void* not_used){
 
 	//Last drain tsc
 	prev_tsc = 0;
+
+	RTE_LOG(INFO, EAL, "run task on core_id=%d\n", core_id);
 
 	while(likely(tasks->active)){
 
@@ -257,6 +259,7 @@ int processing_core_process_packets(void* not_used){
 		for(i=0;i<tasks->num_of_rx_ports;++i)
 		{
 			port = tasks->port_list[i];
+			RTE_LOG(INFO, EAL, "rx on port=%s up=%d\n", port->name, port->up);
 			if(likely(port != NULL) && likely(port->up)){ //This CAN happen while deschedulings
 				//Process RX&pipeline
 				process_port_rx(core_id, port, pkt_burst, &pkt, pkt_state);
@@ -280,10 +283,11 @@ int processing_core_process_packets(void* not_used){
 */
 rofl_result_t processing_schedule_port(switch_port_t* port){
 
-	unsigned int i, *num_of_ports;
-	unsigned int port_id;
-	unsigned int lcore_sel, lcore_sel_load = 0xFFFFFFFF;
-	unsigned int socket_id, it_load;
+	unsigned int i;//, *num_of_ports;
+	//unsigned int port_id;
+	//unsigned int lcore_sel, lcore_sel_load = 0xFFFFFFFF;
+	//unsigned int socket_id, it_load;
+	dpdk_port_state_t* port_state = (dpdk_port_state_t*)port->platform_port_state;
 
 	rte_spinlock_lock(&mutex);
 
@@ -310,6 +314,7 @@ rofl_result_t processing_schedule_port(switch_port_t* port){
 			return ROFL_FAILURE;
 	}
 
+#if 0 // selected by configuration
 	//Select core
 	for(i=0, lcore_sel = RTE_MAX_LCORE; i < RTE_MAX_LCORE; ++i){
 		if( processing_core_tasks[i].available &&
@@ -359,7 +364,9 @@ rofl_result_t processing_schedule_port(switch_port_t* port){
 	}
 
 	XDPD_DEBUG(DRIVER_NAME"[processing] Selected core %u for scheduling port %s(%p)\n", lcore_sel, port->name, port);
+#endif
 
+#if 0 // XXX(toanju) stats need to be fixed, queues should already be in place
 	num_of_ports = &processing_core_tasks[lcore_sel].num_of_rx_ports;
 
 	//Assign port and exit
@@ -456,6 +463,7 @@ rofl_result_t processing_schedule_port(switch_port_t* port){
 				return ROFL_FAILURE;
 		}
 	}
+#endif
 
 
 	//Increment the hash counter
@@ -463,19 +471,34 @@ rofl_result_t processing_schedule_port(switch_port_t* port){
 
 	rte_spinlock_unlock(&mutex);
 
-	if(!processing_core_tasks[lcore_sel].active){
-		if(rte_eal_get_lcore_state(lcore_sel) != WAIT){
-			assert(0);
-			rte_panic("Core status corrupted!");
+	for (i = 0; i < nb_lcore_params; i++) {
+		if (lcore_params[i].port_id == port_state->port_id &&
+		    !processing_core_tasks[lcore_params[i].lcore_id].active) {
+			unsigned lcore_sel = lcore_params[i].lcore_id;
+			if (rte_eal_get_lcore_state(lcore_sel) != WAIT) {
+				assert(0 && "Core status corrupted!");
+				rte_panic("Core status corrupted!");
+			}
+			XDPD_DEBUG(DRIVER_NAME "[processing] Launching core %u "
+					       "due to scheduling action of "
+					       "port %p\n",
+				   lcore_sel, port);
+
+			// Launch
+			XDPD_DEBUG_VERBOSE("Pre-launching core %u due to "
+					   "scheduling action of port %p\n",
+					   lcore_sel, port);
+			if (rte_eal_remote_launch(
+				processing_core_process_packets, NULL,
+				lcore_sel) < 0)
+				rte_panic("Unable to launch core %u! Status "
+					  "was NOT wait (race-condition?)",
+					  lcore_sel);
+			processing_core_tasks[lcore_params[i].lcore_id].active = true;
+			XDPD_DEBUG_VERBOSE("Post-launching core %u due to "
+					   "scheduling action of port %p\n",
+					   lcore_sel, port);
 		}
-
-		XDPD_DEBUG(DRIVER_NAME"[processing] Launching core %u due to scheduling action of port %p\n", lcore_sel, port);
-
-		//Launch
-		XDPD_DEBUG_VERBOSE("Pre-launching core %u due to scheduling action of port %p\n", lcore_sel, port);
-		if( rte_eal_remote_launch(processing_core_process_packets, NULL, lcore_sel) < 0)
-			rte_panic("Unable to launch core %u! Status was NOT wait (race-condition?)", lcore_sel);
-		XDPD_DEBUG_VERBOSE("Post-launching core %u due to scheduling action of port %p\n", lcore_sel, port);
 	}
 
 	//Print the status of the cores

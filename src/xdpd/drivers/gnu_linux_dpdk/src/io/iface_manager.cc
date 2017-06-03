@@ -26,7 +26,6 @@ static int numa_on = 1; /**< NUMA is enabled by default. */
 //static uint16_t nb_rxd = RTE_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TX_DESC_DEFAULT;
 static uint16_t nb_rxd = RTE_RX_DESC_DEFAULT;
-static struct rte_mempool * pktmbuf_pool[NB_SOCKETS];
 
 struct mbuf_table {
 	uint16_t len;
@@ -71,6 +70,30 @@ get_port_n_rx_queues(const uint8_t port)
 	return (uint8_t)(++queue);
 }
 
+static int
+init_lcore_rx_queues(void)
+{
+        uint16_t i, nb_rx_queue;
+        uint8_t lcore;
+
+        for (i = 0; i < nb_lcore_params; ++i) {
+                lcore = lcore_params[i].lcore_id;
+                nb_rx_queue = lcore_conf[lcore].n_rx_queue;
+                if (nb_rx_queue >= MAX_RX_QUEUE_PER_LCORE) {
+                        printf("error: too many queues (%u) for lcore: %u\n",
+                                (unsigned)nb_rx_queue + 1, (unsigned)lcore);
+                        return -1;
+                } else {
+                        lcore_conf[lcore].rx_queue_list[nb_rx_queue].port_id =
+                                lcore_params[i].port_id;
+                        lcore_conf[lcore].rx_queue_list[nb_rx_queue].queue_id =
+                                lcore_params[i].queue_id;
+                        lcore_conf[lcore].n_rx_queue++; 
+                }
+		printf("init_lcore_rx_queue i=%d lcore=%d #lcore_queues=%d\n", i, lcore, lcore_conf[lcore].n_rx_queue);
+        }
+        return 0;
+}
 
 //Initializes the pipeline structure and launches the port 
 static switch_port_t* configure_port(unsigned int port_id){
@@ -123,8 +146,9 @@ static switch_port_t* configure_port(unsigned int port_id){
 	port_conf.rxmode.max_rx_pkt_len =  IO_MAX_PACKET_SIZE;
 	//port_conf.rxmode.hw_ip_checksum = 1;
 	port_conf.rxmode.hw_strip_crc = 0;
-	//port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP;
-	//port_conf.txmode.mq_mode = ETH_MQ_TX_NONE;
+	port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
+	port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP;
+	port_conf.txmode.mq_mode = ETH_MQ_TX_NONE;
 	if ((ret=rte_eth_dev_configure(port_id, 1, IO_IFACE_NUM_QUEUES, &port_conf)) < 0){
 		XDPD_ERR(DRIVER_NAME"[iface_manager][%s] Cannot configure device; %s(%d)\n", port->name, rte_strerror(ret), ret);
 		assert(0);
@@ -226,19 +250,22 @@ static switch_port_t* configure_port(unsigned int port_id){
 				portid = qconf->rx_queue_list[queue].port_id;
 				queueid = qconf->rx_queue_list[queue].queue_id;
 
+				if (portid != port_id)
+					continue;
+
 				if (numa_on)
 					socketid =
 					(uint8_t)rte_lcore_to_socket_id(lcore_id);
 				else
 					socketid = 0;
 
-				printf("rxq=%d,%d,%d ", portid, queueid, socketid);
+				printf("rxq=%d,%d,%d\n", portid, queueid, socketid);
 				fflush(stdout);
 
 				ret = rte_eth_rx_queue_setup(portid, queueid, nb_rxd,
 						socketid,
 						NULL,
-						pktmbuf_pool[socketid]);
+						direct_pools[socketid]);
 				if (ret < 0)
 					rte_exit(EXIT_FAILURE,
 					"rte_eth_rx_queue_setup: err=%d, port=%d\n",
@@ -298,6 +325,7 @@ rofl_result_t iface_manager_set_queues(switch_port_t* port, unsigned int core_id
 	if(dpdk_port->queues_set)
 		return ROFL_SUCCESS;
 	
+#if 0
 	//Setup RX
 	if( (ret=rte_eth_rx_queue_setup(port_id, 0, RTE_RX_DESC_DEFAULT, rte_eth_dev_socket_id(port_id), &rx_conf, direct_pools[sock_id])) < 0 ){
 		XDPD_ERR(DRIVER_NAME"[iface_manager] Cannot setup RX queue: %s\n", rte_strerror(ret));
@@ -314,17 +342,18 @@ rofl_result_t iface_manager_set_queues(switch_port_t* port, unsigned int core_id
 			return ROFL_FAILURE;
 		}
 
-//#if 0
+#if 0
 		//bind stats IGB not supporting this???
 		if( (ret = rte_eth_dev_set_tx_queue_stats_mapping(port_id, i, i)) < 0 ){
 			XDPD_ERR(DRIVER_NAME"[iface_manager] Cannot bind TX queue(%u) stats: %s\n", i, rte_strerror(ret));
 			assert(0);
 			return ROFL_FAILURE;
 		}
-//#endif
+#endif
 	}
-	//Start port
+#endif
 
+	//Start port
 	i = 0;
 START_RETRY:
 	if((ret=rte_eth_dev_start(port_id)) < 0){
@@ -370,6 +399,8 @@ rofl_result_t iface_manager_discover_system_ports(void){
 
 	uint8_t i, num_of_ports;
 	switch_port_t* port;
+
+	init_lcore_rx_queues();
 	num_of_ports = rte_eth_dev_count();
 	
 	XDPD_INFO(DRIVER_NAME"[iface_manager] Found %u DPDK-capable interfaces\n", num_of_ports);
