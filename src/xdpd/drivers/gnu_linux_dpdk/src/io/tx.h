@@ -98,12 +98,8 @@ tx_pkt(switch_port_t* port, unsigned int queue_id, datapacket_t* pkt){
 	mbuf = ((datapacket_dpdk_t*)pkt->platform_state)->mbuf;
 	port_id = ((dpdk_port_state_t*)port->platform_port_state)->port_id;
 
-#ifdef DEBUG
-	if(unlikely(!mbuf)){
-		assert(0);
-		return;
-	}
-#endif
+	assert(mbuf);
+
 	rte_lcore = rte_lcore_id();
 	if (rte_lcore == 0xffffffff) rte_lcore=0;
 	

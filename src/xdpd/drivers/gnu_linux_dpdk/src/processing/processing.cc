@@ -32,7 +32,6 @@ unsigned int total_num_of_phy_ports = 0;
 unsigned int total_num_of_nf_ports = 0;
 unsigned int running_hash = 0;
 
-
 struct rte_mempool* direct_pools[NB_SOCKETS];
 struct rte_mempool* indirect_pools[NB_SOCKETS];
 
@@ -41,15 +40,15 @@ struct rte_mempool* indirect_pools[NB_SOCKETS];
 */
 rofl_result_t processing_init(void){
 
-	unsigned int i;
-	int flags=0;
+	//unsigned int i;
+	//int flags=0;
 	struct rte_config* config;
-	enum rte_lcore_role_t role;
-	unsigned int sock_id;
-	char pool_name[POOL_MAX_LEN_NAME];
+	//enum rte_lcore_role_t role;
+	//unsigned int sock_id;
+	//char pool_name[POOL_MAX_LEN_NAME];
 
 	//Cleanup
-	memset(direct_pools, 0, sizeof(direct_pools));
+	//memset(direct_pools, 0, sizeof(direct_pools));
 	memset(indirect_pools, 0, sizeof(indirect_pools));
 	memset(processing_core_tasks,0,sizeof(core_tasks_t)*RTE_MAX_LCORE);
 
@@ -59,8 +58,9 @@ rofl_result_t processing_init(void){
 	rte_spinlock_init(&mutex);
 
 	XDPD_DEBUG(DRIVER_NAME"[processing] Processing init: %u logical cores guessed from rte_eal_get_configuration(). Master is: %u\n", config->lcore_count, config->master_lcore);
-	mp_hdlr_init_ops_mp_mc();
+	//mp_hdlr_init_ops_mp_mc();
 
+#if 0
 	//Define available cores
 	for(i=0; i < RTE_MAX_LCORE; ++i){
 		role = rte_eal_lcore_role(i);
@@ -118,6 +118,7 @@ rofl_result_t processing_init(void){
 
 		}
 	}
+#endif
 
 	//Print the status of the cores
 	processing_dump_core_states();
@@ -163,10 +164,10 @@ int processing_core_process_packets(void* not_used){
 
 	unsigned int i, l, core_id = rte_lcore_id();
 	int j;
-	bool own_port;
+	bool own_port = true;
 	switch_port_t* port;
 	port_bursts_t* port_bursts;
-        uint64_t diff_tsc, prev_tsc;
+        uint64_t diff_tsc, prev_tsc, cur_tsc;
 	struct rte_mbuf* pkt_burst[IO_IFACE_MAX_PKT_BURST]={0};
 	core_tasks_t* tasks = &processing_core_tasks[core_id];
 
@@ -175,6 +176,11 @@ int processing_core_process_packets(void* not_used){
 
 	//Own core
 	core_id = rte_lcore_id();
+
+	if (tasks->n_rx_queue == 0) {
+		RTE_LOG(INFO, XDPD, "lcore %u has nothing to do\n", core_id);
+		return 0;
+	}
 
 	//Parsing and pipeline extra state
 	datapacket_t pkt;
@@ -190,15 +196,16 @@ int processing_core_process_packets(void* not_used){
 	//Last drain tsc
 	prev_tsc = 0;
 
-	RTE_LOG(INFO, EAL, "run task on core_id=%d\n", core_id);
+	RTE_LOG(INFO, XDPD, "run task on core_id=%d\n", core_id);
 
 	while(likely(tasks->active)){
 
 		//Update running_hash
 		tasks->running_hash = running_hash;
 
+		cur_tsc = rte_rdtsc();
 		//Calc diff
-		diff_tsc = prev_tsc - rte_rdtsc();
+		diff_tsc = cur_tsc - prev_tsc;
 
 		//Drain TX if necessary
 		if(unlikely(diff_tsc > drain_tsc)){
@@ -215,7 +222,7 @@ int processing_core_process_packets(void* not_used){
 				port_bursts = &tasks->phy_ports[i];
 
 				//Check whether is our port (we have to also transmit TX queues)
-				own_port = (port_bursts->core_id == core_id);
+				//own_port = (port_bursts->core_id == core_id); // XXX(toanju): check with marc
 
 				//Flush (enqueue them in the RX/TX port lcore)
 				for( j=(IO_IFACE_NUM_QUEUES-1); j >=0 ; j-- ){
@@ -240,7 +247,7 @@ int processing_core_process_packets(void* not_used){
 
 				if(nf_port_mapping[i]->type == PORT_TYPE_NF_EXTERNAL){
 					//Check whether is our port (we have to also transmit TX queues)
-					own_port = (port_bursts->core_id == core_id);
+					//own_port = (port_bursts->core_id == core_id);
 
 					flush_kni_nf_port_burst(nf_port_mapping[i], i, &port_bursts->tx_queues_burst[0]);
 
@@ -253,13 +260,14 @@ int processing_core_process_packets(void* not_used){
 				}
 			}
 #endif
+			prev_tsc = cur_tsc;
 		}
 
 		//Process RX
 		for(i=0;i<tasks->num_of_rx_ports;++i)
 		{
 			port = tasks->port_list[i];
-			RTE_LOG(INFO, EAL, "rx on port=%s up=%d\n", port->name, port->up);
+			RTE_LOG(INFO, XDPD, "rx on port=%s up=%d\n", port->name, port->up);
 			if(likely(port != NULL) && likely(port->up)){ //This CAN happen while deschedulings
 				//Process RX&pipeline
 				process_port_rx(core_id, port, pkt_burst, &pkt, pkt_state);
@@ -441,21 +449,22 @@ rofl_result_t processing_schedule_port(switch_port_t* port){
 
 	processing_core_tasks[lcore_sel].port_list[*num_of_ports] = port;
 	(*num_of_ports)++;
+#endif
 
 	//Mark port as present (and scheduled) on all cores (TX)
 	for(i=0;i<RTE_MAX_LCORE;++i){
 
 		switch(port->type){
 			case PORT_TYPE_PHYSICAL:
-				processing_core_tasks[i].phy_ports[port_id].present = true;
-				processing_core_tasks[i].phy_ports[port_id].core_id = lcore_sel;
+				processing_core_tasks[i].phy_ports[port_state->port_id].present = true;
+				processing_core_tasks[i].phy_ports[port_state->port_id].core_id = 0; // XXX(toanju): not only a single one
 				break;
 
 #ifdef GNU_LINUX_DPDK_ENABLE_NF
 			case PORT_TYPE_NF_SHMEM:
 			case PORT_TYPE_NF_EXTERNAL:
-				processing_core_tasks[i].nf_ports[port_id].present = true;
-				processing_core_tasks[i].nf_ports[port_id].core_id = lcore_sel;
+				processing_core_tasks[i].nf_ports[port_state->port_id].present = true;
+				processing_core_tasks[i].nf_ports[port_state->port_id].core_id = 0;
 				break;
 #endif //GNU_LINUX_DPDK_ENABLE_NF
 
@@ -463,7 +472,6 @@ rofl_result_t processing_schedule_port(switch_port_t* port){
 				return ROFL_FAILURE;
 		}
 	}
-#endif
 
 
 	//Increment the hash counter

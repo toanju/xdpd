@@ -13,9 +13,22 @@
 #include <rte_malloc.h> 
 #include <rte_errno.h> 
 
-#include <fcntl.h>  
+#include <fcntl.h>
+
+#define NB_MBUF                                                                \
+	RTE_MAX((nb_ports * nb_rx_queue * RTE_TEST_RX_DESC_DEFAULT +           \
+		 nb_ports * nb_lcores * MAX_PKT_BURST +                        \
+		 nb_ports * n_tx_queue * RTE_TEST_TX_DESC_DEFAULT +            \
+		 nb_lcores * MEMPOOL_CACHE_SIZE),                              \
+		(unsigned)8192)
+
+#define MEMPOOL_CACHE_SIZE 256
+#define RTE_TEST_RX_DESC_DEFAULT 128
+#define RTE_TEST_TX_DESC_DEFAULT 512
+#define MAX_PKT_BURST 32
 
 extern struct rte_mempool* direct_pools[NB_SOCKETS];
+struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 
 switch_port_t* phy_port_mapping[PORT_MANAGER_MAX_PORTS] = {0};
 struct rte_ring* port_tx_lcore_queue[PORT_MANAGER_MAX_PORTS][IO_IFACE_NUM_QUEUES] = {{NULL}};
@@ -26,30 +39,6 @@ static int numa_on = 1; /**< NUMA is enabled by default. */
 //static uint16_t nb_rxd = RTE_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TX_DESC_DEFAULT;
 static uint16_t nb_rxd = RTE_RX_DESC_DEFAULT;
-
-struct mbuf_table {
-	uint16_t len;
-	struct rte_mbuf *m_table[IO_IFACE_MAX_PKT_BURST];
-};
-
-struct lcore_rx_queue {
-	uint8_t port_id;
-	uint8_t queue_id;
-} __rte_cache_aligned;
-
-struct lcore_conf {
-	uint16_t n_rx_queue;
-	struct lcore_rx_queue rx_queue_list[MAX_RX_QUEUE_PER_LCORE];
-	uint16_t n_tx_port;
-	uint16_t tx_port_id[RTE_MAX_ETHPORTS];
-	uint16_t tx_queue_id[RTE_MAX_ETHPORTS];
-	struct mbuf_table tx_mbufs[RTE_MAX_ETHPORTS];
-//	void *ipv4_lookup_struct;
-//	void *ipv6_lookup_struct;
-} __rte_cache_aligned;
-
-
-struct lcore_conf lcore_conf[RTE_MAX_LCORE];
 
 static uint8_t
 get_port_n_rx_queues(const uint8_t port)
@@ -70,6 +59,35 @@ get_port_n_rx_queues(const uint8_t port)
 	return (uint8_t)(++queue);
 }
 
+static int check_lcore_params(void)
+{
+	uint8_t queue, lcore;
+	uint16_t i;
+	int socketid;
+
+	for (i = 0; i < nb_lcore_params; ++i) {
+		queue = lcore_params[i].queue_id;
+		if (queue >= MAX_RX_QUEUE_PER_PORT) {
+			printf("invalid queue number: %hhu\n", queue);
+			return -1;
+		}
+		lcore = lcore_params[i].lcore_id;
+		if (!rte_lcore_is_enabled(lcore)) {
+			printf(
+			    "error: lcore %hhu is not enabled in lcore mask\n",
+			    lcore);
+			return -1;
+		}
+		if ((socketid = rte_lcore_to_socket_id(lcore) != 0) &&
+		    (numa_on == 0)) {
+			printf("warning: lcore %hhu is on socket %d with numa "
+			       "off \n",
+			       lcore, socketid);
+		}
+	}
+	return 0;
+}
+
 static int
 init_lcore_rx_queues(void)
 {
@@ -78,38 +96,96 @@ init_lcore_rx_queues(void)
 
         for (i = 0; i < nb_lcore_params; ++i) {
                 lcore = lcore_params[i].lcore_id;
-                nb_rx_queue = lcore_conf[lcore].n_rx_queue;
+                nb_rx_queue = processing_core_tasks[lcore].n_rx_queue;
                 if (nb_rx_queue >= MAX_RX_QUEUE_PER_LCORE) {
                         printf("error: too many queues (%u) for lcore: %u\n",
                                 (unsigned)nb_rx_queue + 1, (unsigned)lcore);
                         return -1;
                 } else {
-                        lcore_conf[lcore].rx_queue_list[nb_rx_queue].port_id =
+                        processing_core_tasks[lcore].rx_queue_list[nb_rx_queue].port_id =
                                 lcore_params[i].port_id;
-                        lcore_conf[lcore].rx_queue_list[nb_rx_queue].queue_id =
+                        processing_core_tasks[lcore].rx_queue_list[nb_rx_queue].queue_id =
                                 lcore_params[i].queue_id;
-                        lcore_conf[lcore].n_rx_queue++; 
+                        processing_core_tasks[lcore].n_rx_queue++; 
                 }
-		printf("init_lcore_rx_queue i=%d lcore=%d #lcore_queues=%d\n", i, lcore, lcore_conf[lcore].n_rx_queue);
+		printf("init_lcore_rx_queue i=%d lcore=%d #lcore_queues=%d\n", i, lcore, processing_core_tasks[lcore].n_rx_queue);
         }
         return 0;
 }
 
+static int check_port_config(const unsigned nb_ports)
+{
+	unsigned portid;
+	uint16_t i;
+
+	for (i = 0; i < nb_lcore_params; ++i) {
+		portid = lcore_params[i].port_id;
+		if (portid >= nb_ports) {
+			printf("port %u is not present on the board\n", portid);
+			return -1;
+		}
+	}
+	return 0;
+}
+static int init_mem(unsigned nb_mbuf)
+{
+	int socketid;
+	unsigned lcore_id;
+	char s[64];
+
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		if (rte_lcore_is_enabled(lcore_id) == 0)
+			continue;
+
+		if (numa_on)
+			socketid = rte_lcore_to_socket_id(lcore_id);
+		else
+			socketid = 0;
+
+		if (socketid >= NB_SOCKETS) {
+			rte_exit(EXIT_FAILURE,
+				 "Socket %d of lcore %u is out of range %d\n",
+				 socketid, lcore_id, NB_SOCKETS);
+		}
+		if (direct_pools[socketid] == NULL) {
+			snprintf(s, sizeof(s), "mbuf_pool_%d", socketid);
+			direct_pools[socketid] = rte_pktmbuf_pool_create(
+			    s, nb_mbuf, MEMPOOL_CACHE_SIZE, 0,
+			    RTE_MBUF_DEFAULT_BUF_SIZE, socketid);
+			if (direct_pools[socketid] == NULL)
+				rte_exit(EXIT_FAILURE,
+					 "Cannot init mbuf pool on socket %d\n",
+					 socketid);
+			else
+				printf("Allocated mbuf pool on socket %d\n",
+				       socketid);
+		}
+	}
+	return 0;
+}
+
+static void print_ethaddr(const char *name, const struct ether_addr *eth_addr)
+{
+	char buf[ETHER_ADDR_FMT_SIZE];
+	ether_format_addr(buf, ETHER_ADDR_FMT_SIZE, eth_addr);
+	printf("%s%s", name, buf);
+}
+
 //Initializes the pipeline structure and launches the port 
-static switch_port_t* configure_port(unsigned int port_id){
+static switch_port_t* configure_port(uint8_t port_id){
 
 	int ret;
 	switch_port_t* port;
-	struct lcore_conf *qconf;
+	struct core_tasks *qconf;
 	struct rte_eth_dev_info dev_info;
 	struct rte_eth_conf port_conf;
 	struct rte_eth_txconf *txconf;
 	char port_name[SWITCH_PORT_MAX_LEN_NAME];
 	//char queue_name[PORT_QUEUE_MAX_LEN_NAME];
 	uint16_t queueid;
-	unsigned lcore_id;
+	unsigned lcore_id, nb_ports;
 	uint32_t n_tx_queue, nb_lcores;
-	uint8_t portid, nb_rx_queue, socketid, queue;
+	uint8_t nb_rx_queue, socketid, queue;
 	
 	//Get info
 	rte_eth_dev_info_get(port_id, &dev_info);
@@ -117,7 +193,11 @@ static switch_port_t* configure_port(unsigned int port_id){
 	//Hack to "deduce" the maximum speed of the NIC.
 	//As of DPDK v1.4 there is not way to retreive such features from
 	//the NIC
-	if(strncmp(dev_info.driver_name, "net_i40e", 8) == 0){
+	XDPD_DEBUG(DRIVER_NAME"[iface_manager] driver_name=%s\n", dev_info.driver_name);
+	if(strncmp(dev_info.driver_name, "net_i40e_vf", 10) == 0){
+		/* 40G vf */
+		snprintf (port_name, SWITCH_PORT_MAX_LEN_NAME, "40gevf%u",port_id);
+	} else if(strncmp(dev_info.driver_name, "net_i40e", 8) == 0){
 		/* 40G */
 		snprintf (port_name, SWITCH_PORT_MAX_LEN_NAME, "40ge%u",port_id);
 	} else if(strncmp(dev_info.driver_name, "net_ixgbe", 9) == 0) {
@@ -128,6 +208,7 @@ static switch_port_t* configure_port(unsigned int port_id){
 		snprintf (port_name, SWITCH_PORT_MAX_LEN_NAME, "ge%u",port_id);
 	}
 
+	XDPD_INFO(DRIVER_NAME"[iface_manager] configuring port %s\n", port_name);
 	//Initialize pipeline port
 	port = switch_port_init(port_name, false, PORT_TYPE_PHYSICAL, PORT_STATE_NONE);
 	if(!port)
@@ -143,41 +224,49 @@ static switch_port_t* configure_port(unsigned int port_id){
 
 	//Set rx and tx queues
 	memset(&port_conf, 0, sizeof(port_conf));
-	port_conf.rxmode.max_rx_pkt_len =  IO_MAX_PACKET_SIZE;
-	//port_conf.rxmode.hw_ip_checksum = 1;
-	port_conf.rxmode.hw_strip_crc = 0;
+
 	port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
+	port_conf.rxmode.max_rx_pkt_len = IO_MAX_PACKET_SIZE;
+	port_conf.rxmode.split_hdr_size = 0;
+	port_conf.rxmode.header_split = 0;   /**< Header Split disabled */
+	port_conf.rxmode.hw_ip_checksum = 1; /**< IP checksum offload enabled */
+	port_conf.rxmode.hw_vlan_filter = 0; /**< VLAN filtering disabled */
+	port_conf.rxmode.jumbo_frame = 0;  /**< Jumbo Frame Support disabled */
+	port_conf.rxmode.hw_strip_crc = 1; /**< CRC stripped by hardware */
+
+	port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
 	port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP;
+
 	port_conf.txmode.mq_mode = ETH_MQ_TX_NONE;
-	if ((ret=rte_eth_dev_configure(port_id, 1, IO_IFACE_NUM_QUEUES, &port_conf)) < 0){
-		XDPD_ERR(DRIVER_NAME"[iface_manager][%s] Cannot configure device; %s(%d)\n", port->name, rte_strerror(ret), ret);
-		assert(0);
-		return NULL;
-	}
 
-
+	nb_ports = rte_eth_dev_count();
 	nb_lcores = rte_lcore_count();
-	n_tx_queue = nb_lcores;
-	nb_rx_queue = get_port_n_rx_queues(port_id);
+	nb_rx_queue = get_port_n_rx_queues(port_id); //< must always equal(=1)
+	n_tx_queue = MAX_TX_QUEUE_PER_PORT; // for pf could be rte_lcore_count();
+
 	if (n_tx_queue > MAX_TX_QUEUE_PER_PORT)
 		n_tx_queue = MAX_TX_QUEUE_PER_PORT;
-	printf("Creating queues: nb_rxq=%d nb_txq=%u... ",
-			nb_rx_queue, (unsigned)n_tx_queue );
-	ret = rte_eth_dev_configure(port_id, nb_rx_queue,
-			(uint16_t)n_tx_queue, &port_conf);
+
+	printf("Creating queues: nb_rxq=%d nb_txq=%u... ", nb_rx_queue,
+	       (unsigned)n_tx_queue);
+
+	ret = rte_eth_dev_configure(port_id, nb_rx_queue, (uint16_t)n_tx_queue,
+				    &port_conf);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE,
-				"Cannot configure device: err=%d, port=%d\n",
-				ret, port_id);
-			//Recover MAC address
-	rte_eth_macaddr_get(port_id, (struct ether_addr*)&port->hwaddr);
-	//rte_eth_macaddr_get(port_id, &ports_eth_addr[port_id]);
-	//print_ethaddr(" Address:", &ports_eth_addr[port_id]);
-	//printf(", ");
-	//print_ethaddr("Destination:",
-	//	(const struct ether_addr *)&dest_eth_addr[port_id]);
-	//printf(", ");
+			 "Cannot configure device: err=%d, port=%d\n", ret,
+			 port_id);
 
+	//Recover MAC address
+	rte_eth_macaddr_get(port_id, &ports_eth_addr[port_id]);
+	print_ethaddr(" Address:", &ports_eth_addr[port_id]);
+	printf(", ");
+
+	ret = init_mem(NB_MBUF);
+	if (ret < 0)
+		rte_exit(EXIT_FAILURE, "init_mem failed\n");
+
+#if 0 // PF can do so
 	/* init one TX queue per couple (lcore,port) */
 	queueid = 0;
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
@@ -204,13 +293,32 @@ static switch_port_t* configure_port(unsigned int port_id){
 					"rte_eth_tx_queue_setup: err=%d, "
 					"port=%d\n", ret, port_id);
 
-		qconf = &lcore_conf[lcore_id];
+		qconf = &processing_core_tasks[lcore_id];
 		qconf->tx_queue_id[port_id] = queueid;
 		queueid++;
 
 		qconf->tx_port_id[qconf->n_tx_port] = port_id;
 		qconf->n_tx_port++;
 	}
+#else
+	/* init one TX queue */
+	socketid = (uint8_t)rte_lcore_to_socket_id(rte_get_master_lcore());
+
+	printf("txq=%d,%d,%d ", port_id, 0, socketid);
+	fflush(stdout);
+
+	rte_eth_dev_info_get(port_id, &dev_info);
+	txconf = &dev_info.default_txconf;
+	if (port_conf.rxmode.jumbo_frame)
+		txconf->txq_flags = 0;
+	ret = rte_eth_tx_queue_setup(port_id, 0, nb_txd, socketid, txconf);
+	if (ret < 0)
+		rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup: err=%d, "
+				       "port=%d\n",
+			 ret, port_id);
+
+	printf("\n");
+#endif
 
 	//Add TX queues to the pipeline
 	//Filling one-by-one the queues 
@@ -239,41 +347,79 @@ static switch_port_t* configure_port(unsigned int port_id){
 	}
 	*/
 
+#if 0
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
-			if (rte_lcore_is_enabled(lcore_id) == 0)
+		if (rte_lcore_is_enabled(lcore_id) == 0)
+			continue;
+		qconf = &processing_core_tasks[lcore_id];
+		printf("\nInitializing rx queues on lcore %u ... ", lcore_id);
+		fflush(stdout);
+		/* init RX queues */
+		for (queue = 0; queue < qconf->n_rx_queue; ++queue) {
+			uint8_t portid = qconf->rx_queue_list[queue].port_id;
+			queueid = qconf->rx_queue_list[queue].queue_id;
+
+			if (portid != port_id)
 				continue;
-			qconf = &lcore_conf[lcore_id];
-			printf("\nInitializing rx queues on lcore %u ... ", lcore_id );
+
+			if (numa_on)
+				socketid =
+				    (uint8_t)rte_lcore_to_socket_id(lcore_id);
+			else
+				socketid = 0;
+
+			printf("rxq=%d,%d,%d\n", portid, queueid, socketid);
 			fflush(stdout);
-			/* init RX queues */
-			for(queue = 0; queue < qconf->n_rx_queue; ++queue) {
-				portid = qconf->rx_queue_list[queue].port_id;
-				queueid = qconf->rx_queue_list[queue].queue_id;
 
-				if (portid != port_id)
-					continue;
-
-				if (numa_on)
-					socketid =
-					(uint8_t)rte_lcore_to_socket_id(lcore_id);
-				else
-					socketid = 0;
-
-				printf("rxq=%d,%d,%d\n", portid, queueid, socketid);
-				fflush(stdout);
-
-				ret = rte_eth_rx_queue_setup(portid, queueid, nb_rxd,
-						socketid,
-						NULL,
-						direct_pools[socketid]);
-				if (ret < 0)
-					rte_exit(EXIT_FAILURE,
-					"rte_eth_rx_queue_setup: err=%d, port=%d\n",
-					ret, portid);
-			}
+			ret = rte_eth_rx_queue_setup(portid, queueid, nb_rxd,
+						     socketid, NULL,
+						     direct_pools[socketid]);
+			if (ret < 0)
+				rte_exit(
+				    EXIT_FAILURE,
+				    "rte_eth_rx_queue_setup: err=%d, port=%d\n",
+				    ret, portid);
 		}
+	}
+#else
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		if (rte_lcore_is_enabled(lcore_id) == 0)
+			continue;
+		qconf = &processing_core_tasks[lcore_id];
+		qconf->tx_queue_id = 0;
 
-		
+		printf("\nInitializing rx queues on lcore %u ... ", lcore_id);
+		fflush(stdout);
+		/* init RX queues */
+		for (queue = 0; queue < qconf->n_rx_queue; ++queue) {
+			uint8_t portid = qconf->rx_queue_list[queue].port_id;
+			queueid = qconf->rx_queue_list[queue].queue_id;
+
+			if (portid != port_id)
+				continue;
+
+			if (numa_on)
+				socketid =
+				    (uint8_t)rte_lcore_to_socket_id(lcore_id);
+			else
+				socketid = 0;
+
+			printf("rxq=%d,%d,%d ", portid, queueid, socketid);
+			fflush(stdout);
+
+			ret = rte_eth_rx_queue_setup(portid, queueid, nb_rxd,
+						     socketid, NULL,
+						     direct_pools[socketid]);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE,
+					 "rte_eth_rx_queue_setup: err=%d,"
+					 "port=%d\n",
+					 ret, portid);
+		}
+	}
+	printf("\n");
+#endif
+
 	//Fill-in dpdk port state
 	ps->queues_set = false;
 	ps->scheduled = false;
@@ -400,10 +546,23 @@ rofl_result_t iface_manager_discover_system_ports(void){
 	uint8_t i, num_of_ports;
 	switch_port_t* port;
 
-	init_lcore_rx_queues();
+	if (check_lcore_params() < 0) {
+		XDPD_ERR(DRIVER_NAME"[iface_manager] check_lcore_params failed\n");
+		return ROFL_FAILURE;
+	}
+
+	if (init_lcore_rx_queues() < 0) {
+		XDPD_ERR(DRIVER_NAME"[iface_manager] init_lcore_rx_queues failed\n");
+		return ROFL_FAILURE;
+	}
+
 	num_of_ports = rte_eth_dev_count();
-	
 	XDPD_INFO(DRIVER_NAME"[iface_manager] Found %u DPDK-capable interfaces\n", num_of_ports);
+	
+	if (check_port_config(num_of_ports) < 0) {
+		XDPD_ERR(DRIVER_NAME "[iface_manager] check_port_config failed\n");
+		return ROFL_FAILURE;
+	}
 	
 	for(i=0;i<num_of_ports;++i){
 		if(! ( port = configure_port(i) ) ){

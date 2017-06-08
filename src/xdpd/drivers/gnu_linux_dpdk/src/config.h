@@ -24,6 +24,9 @@
 //coremask instead
 #define ABORT_ON_UNMATCHED_SCHED
 
+/* logging */
+#define RTE_LOGTYPE_XDPD RTE_LOGTYPE_USER1
+
 /*
 * BG stuff
 */
@@ -43,19 +46,15 @@
 //Number of output queues per interface
 #define IO_IFACE_NUM_QUEUES 1 //8
 #define MAX_RX_QUEUE_PER_LCORE 16
-#define MAX_TX_QUEUE_PER_PORT RTE_MAX_ETHPORTS
+#define MAX_TX_QUEUE_PER_PORT 1 // for pf: RTE_MAX_ETHPORTS
 #define MAX_RX_QUEUE_PER_PORT 128
 #define IO_IFACE_MAX_PKT_BURST 32
 #define MAX_LCORE_PARAMS 1024
 #define IO_MAX_PACKET_SIZE 1518
 
-#if 0
-#endif
-
 //Bufferpool reservoir(PKT_INs); ideally at least X*max_num_lsis
 #define IO_BUFFERPOOL_RESERVOIR 2048
 
- 
 //TX queue (rte_ring) size
 #define IO_TX_LCORE_QUEUE_SLOTS 2<<11 //2048
 
