@@ -31,8 +31,9 @@ extern struct rte_mempool* direct_pools[NB_SOCKETS];
 struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 
 switch_port_t* phy_port_mapping[PORT_MANAGER_MAX_PORTS] = {0};
-struct rte_ring* port_tx_lcore_queue[PORT_MANAGER_MAX_PORTS][IO_IFACE_NUM_QUEUES] = {{NULL}};
+struct rte_ring* port_tx_lcore_queue[PORT_MANAGER_MAX_PORTS][IO_IFACE_NUM_QUEUES] = {{NULL}}; // XXX(toanju) should be sufficient for shmen only
 
+uint8_t nb_phy_ports = 0;
 pthread_rwlock_t iface_manager_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 static int numa_on = 1; /**< NUMA is enabled by default. */
 /* Static global variables used within this file. */
@@ -103,7 +104,7 @@ init_lcore_rx_queues(void)
                         return -1;
                 } else {
                         processing_core_tasks[lcore].rx_queue_list[nb_rx_queue].port_id =
-                                lcore_params[i].port_id;
+                                lcore_params[i].port_id; // XXX(toanju) this is currently pretty static wrt. port_id
                         processing_core_tasks[lcore].rx_queue_list[nb_rx_queue].queue_id =
                                 lcore_params[i].queue_id;
                         processing_core_tasks[lcore].n_rx_queue++; 
@@ -120,7 +121,7 @@ static int check_port_config(const unsigned nb_ports)
 
 	for (i = 0; i < nb_lcore_params; ++i) {
 		portid = lcore_params[i].port_id;
-		if (portid >= nb_ports) {
+		if (portid >= nb_ports) { // XXX(toanju) this does not cover logical (NF) ports
 			printf("port %u is not present on the board\n", portid);
 			return -1;
 		}
@@ -208,7 +209,7 @@ static switch_port_t* configure_port(uint8_t port_id){
 		snprintf (port_name, SWITCH_PORT_MAX_LEN_NAME, "ge%u",port_id);
 	}
 
-	XDPD_INFO(DRIVER_NAME"[iface_manager] configuring port %s\n", port_name);
+	XDPD_INFO(DRIVER_NAME"[iface_manager] configuring port %s port_id=%d\n", port_name, port_id);
 	//Initialize pipeline port
 	port = switch_port_init(port_name, false, PORT_TYPE_PHYSICAL, PORT_STATE_NONE);
 	if(!port)
@@ -241,8 +242,8 @@ static switch_port_t* configure_port(uint8_t port_id){
 
 	nb_ports = rte_eth_dev_count();
 	nb_lcores = rte_lcore_count();
-	nb_rx_queue = get_port_n_rx_queues(port_id); //< must always equal(=1)
-	n_tx_queue = MAX_TX_QUEUE_PER_PORT; // for pf could be rte_lcore_count();
+	nb_rx_queue = get_port_n_rx_queues(port_id);
+	n_tx_queue = MAX_TX_QUEUE_PER_PORT; // for pf could be rte_lcore_count(); must always equal(=1) for vf
 
 	if (n_tx_queue > MAX_TX_QUEUE_PER_PORT)
 		n_tx_queue = MAX_TX_QUEUE_PER_PORT;
@@ -347,7 +348,7 @@ static switch_port_t* configure_port(uint8_t port_id){
 	}
 	*/
 
-#if 0
+#if 0 // PF
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		if (rte_lcore_is_enabled(lcore_id) == 0)
 			continue;
@@ -429,21 +430,25 @@ static switch_port_t* configure_port(uint8_t port_id){
 	unsigned int cpu_socket_id = rte_eth_dev_socket_id(port_id);
 	XDPD_INFO(DRIVER_NAME"[iface_manager] Discovered port %s [PCI addr: %04u:%02u:%02u, MAC: %02X:%02X:%02X:%02X:%02X:%02X] id %u (CPU socket: %u)\n", port_name, dev_info.pci_dev->addr.domain, dev_info.pci_dev->addr.bus, dev_info.pci_dev->addr.devid, port->hwaddr[0], port->hwaddr[1], port->hwaddr[2], port->hwaddr[3], port->hwaddr[4], port->hwaddr[5], port_id, (cpu_socket_id == 0xFFFFFFFF)? 0 : cpu_socket_id);
 
-
-
 	//Set the port in the phy_port_mapping
 	phy_port_mapping[port_id] = port;
 
 	return port;
 }
 
-rofl_result_t iface_manager_set_queues(switch_port_t* port, unsigned int core_id, unsigned int port_id ){
-	
+rofl_result_t iface_manager_set_queues(switch_port_t *port)
+{
 	unsigned int i;
 	int ret;
 	unsigned int sock_id;
 	struct rte_eth_rxconf rx_conf;
 	struct rte_eth_txconf tx_conf;
+
+	if (port->type != PORT_TYPE_PHYSICAL)
+		return ROFL_SUCCESS;
+
+	//Recover the platform state
+	dpdk_port_state_t *ps = (dpdk_port_state_t *)port->platform_port_state;
 
 	memset(&rx_conf, 0, sizeof(rx_conf));
 	memset(&tx_conf, 0, sizeof(tx_conf));
@@ -461,14 +466,12 @@ rofl_result_t iface_manager_set_queues(switch_port_t* port, unsigned int core_id
 	tx_conf.txq_flags = ETH_TXQ_FLAGS_NOMULTSEGS;
 
 	//Check first for the socket CPU id
-	sock_id = rte_eth_dev_socket_id(port_id);
+	sock_id = rte_eth_dev_socket_id(ps->port_id);
 	if(sock_id == 0xFFFFFFFF)
 		sock_id = 0;//Single CPU socket system
 
-	//Recover the platform state
-	dpdk_port_state_t* dpdk_port = (dpdk_port_state_t*)port->platform_port_state;
 	
-	if(dpdk_port->queues_set)
+	if(ps->queues_set)
 		return ROFL_SUCCESS;
 	
 #if 0
@@ -502,38 +505,38 @@ rofl_result_t iface_manager_set_queues(switch_port_t* port, unsigned int core_id
 	//Start port
 	i = 0;
 START_RETRY:
-	if((ret=rte_eth_dev_start(port_id)) < 0){
+	if((ret=rte_eth_dev_start(ps->port_id)) < 0){
 		if(++i != 100) {
 			// Circumvent DPDK issues with rte_eth_dev_start
 			usleep(300*1000);
 			goto START_RETRY;
 		}
 
-		XDPD_ERR(DRIVER_NAME"[iface_manager] Cannot start device %u:  %s\n", port_id, rte_strerror(ret));
+		XDPD_ERR(DRIVER_NAME"[iface_manager] Cannot start device %u:  %s\n", ps->port_id, rte_strerror(ret));
 		assert(0 && "rte_eth_dev_start failed");
 		return ROFL_FAILURE; 
 	}
 
 	//Set pipeline state to UP
-	if(likely(phy_port_mapping[port_id]!=NULL)){
-		phy_port_mapping[port_id]->up = true;
+	if(likely(phy_port_mapping[ps->port_id]!=NULL)){
+		phy_port_mapping[ps->port_id]->up = true;
 	}
 
 	//Set promiscuous mode
-	rte_eth_promiscuous_enable(port_id);
+	rte_eth_promiscuous_enable(ps->port_id);
 
 	//Enable multicast
-	rte_eth_allmulticast_enable(port_id);
+	rte_eth_allmulticast_enable(ps->port_id);
 	
 	//Reset stats
-	rte_eth_stats_reset(port_id);
+	rte_eth_stats_reset(ps->port_id);
 
 	//Make sure the link is up
-	rte_eth_dev_set_link_down(port_id);
-	rte_eth_dev_set_link_up(port_id);
+	rte_eth_dev_set_link_down(ps->port_id);
+	rte_eth_dev_set_link_up(ps->port_id);
 
 	//Set as queues setup
-	dpdk_port->queues_set=true;
+	ps->queues_set=true;
 	
 	return ROFL_SUCCESS;
 }
@@ -543,7 +546,7 @@ START_RETRY:
 */
 rofl_result_t iface_manager_discover_system_ports(void){
 
-	uint8_t i, num_of_ports;
+	uint8_t i;
 	switch_port_t* port;
 
 	if (check_lcore_params() < 0) {
@@ -556,15 +559,15 @@ rofl_result_t iface_manager_discover_system_ports(void){
 		return ROFL_FAILURE;
 	}
 
-	num_of_ports = rte_eth_dev_count();
-	XDPD_INFO(DRIVER_NAME"[iface_manager] Found %u DPDK-capable interfaces\n", num_of_ports);
+	nb_phy_ports = rte_eth_dev_count();
+	XDPD_INFO(DRIVER_NAME"[iface_manager] Found %u DPDK-capable interfaces\n", nb_phy_ports);
 	
-	if (check_port_config(num_of_ports) < 0) {
+	if (check_port_config(nb_phy_ports) < 0) {
 		XDPD_ERR(DRIVER_NAME "[iface_manager] check_port_config failed\n");
 		return ROFL_FAILURE;
 	}
-	
-	for(i=0;i<num_of_ports;++i){
+
+	for (i = 0; i < nb_phy_ports; ++i) {
 		if(! ( port = configure_port(i) ) ){
 			XDPD_ERR(DRIVER_NAME"[iface_manager] Unable to initialize port-id: %u\n", i);
 			return ROFL_FAILURE;

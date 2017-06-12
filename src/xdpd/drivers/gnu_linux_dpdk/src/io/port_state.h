@@ -13,16 +13,15 @@
 
 #include "../config.h"
 
-struct dpdk_port_state{
+struct dpdk_port_state {
 	//Core attachement state
 	bool scheduled;
 	bool queues_set;
-	unsigned int core_id;
-	unsigned int core_port_slot;
 
 	//port id (dpdk)
-	unsigned int port_id;
-}__rte_cache_aligned;
+	unsigned port_id;
+	unsigned proc_id;
+} __rte_cache_aligned;
 
 typedef struct dpdk_port_state dpdk_port_state_t;
 
@@ -32,6 +31,7 @@ typedef struct dpdk_port_state dpdk_port_state_t;
 * @brief Represent the state of a DPDK SECONDARY NF port
 */
 struct dpdk_shmem_port_state{
+	dpdk_port_state_t state;
 	/**
 	* @brief queue used to send packets to a NF
 	*/
@@ -55,14 +55,6 @@ struct dpdk_shmem_port_state{
 	*/
 	uint32_t counter_from_last_flush;
 #endif
-
-	/**
-	* @brief Core attachement information
-	*/
-	bool scheduled;
-	unsigned int core_id;
-	unsigned int core_port_slot;
-
 	/**
 	* @brief Identifier of the NF port
 	*/
@@ -80,6 +72,7 @@ typedef struct dpdk_shmem_port_state dpdk_shmem_port_state_t;
 * @brief Represent the state of a DPDK KNI NF port
 */
 struct dpdk_kni_port_state{
+	dpdk_port_state_t state;
 	/**
 	*	@brief: KNI context
 	*/
@@ -91,13 +84,6 @@ struct dpdk_kni_port_state{
 	*		port is created
 	*/
 	bool just_created;
-
-	/**
-	* @brief Core attachement information
-	*/
-	bool scheduled;
-	unsigned int core_id;
-	unsigned int core_port_slot;
 
 	/**
 	* @brief Identifier of the NF port

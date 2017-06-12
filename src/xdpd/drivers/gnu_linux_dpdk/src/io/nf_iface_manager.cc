@@ -139,7 +139,7 @@ static switch_port_t* configure_nf_port_shmem(const char *nf_name, const char *n
 #endif
 	ps->nf_id = nf_id;
 
-	ps->scheduled = false;
+	ps->state.scheduled = false;
 	port->platform_port_state = (platform_port_state_t*)ps;
 
 	//Set the port in the nf_port_mapping
@@ -214,7 +214,7 @@ static switch_port_t* configure_nf_port_kni(const char *nf_name, const char *nf_
 	ps->nf_id = nf_id;
 
 	ps->just_created = true;
-	ps->scheduled = false;
+	ps->state.scheduled = false;
 	port->platform_port_state = (platform_port_state_t*)ps;
 
 	//Set the port in the nf_port_mapping

@@ -73,10 +73,7 @@ static inline size_t get_buffer_length_dpdk(datapacket_dpdk_t *dpkt){
 //Init & reset (inline)
 static inline rofl_result_t init_datapacket_dpdk(datapacket_dpdk_t *dpkt, struct rte_mbuf* mbuf, of_switch_t* sw, uint32_t in_port, uint32_t in_phy_port, bool classify, bool packet_is_in_bufferpool){
 	
-#ifdef DEBUG
-	if( unlikely(NULL == rte_pktmbuf_mtod(mbuf, uint8_t*) ) )
-		return ROFL_FAILURE;
-#endif
+	assert(dpkt);
 
 	//Fill the structure
 	dpkt->output_queue = 0;

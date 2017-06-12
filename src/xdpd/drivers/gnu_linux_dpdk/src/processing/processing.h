@@ -23,19 +23,18 @@
 #define PROCESSING_MAX_PORTS_PER_CORE 32
 #define PROCESSING_MAX_PORTS 128 
 
-
 struct lcore_rx_queue {
 	uint8_t port_id;
 	uint8_t queue_id;
 } __rte_cache_aligned;
 
-//Burst definition(queue)
+// Burst definition(queue)
 struct mbuf_burst {
 	unsigned len;
 	struct rte_mbuf *burst[IO_IFACE_MAX_PKT_BURST];
 };
 
-//Port queues
+// Port queues
 typedef struct port_bursts{
 	//This are TX-queues of a port
 	bool present; //signals that it is present AND is attached (usable by I/O subsytem)
@@ -49,7 +48,6 @@ typedef struct port_bursts{
 typedef struct core_tasks{
 	bool available;
 	bool active;
-	unsigned int num_of_rx_ports;
 	volatile unsigned int running_hash;
 	
 	uint16_t n_rx_queue;
@@ -62,15 +60,8 @@ typedef struct core_tasks{
 	uint16_t tx_queue_id;
 #endif
 
-	switch_port_t* port_list[PROCESSING_MAX_PORTS_PER_CORE]; //active ports MUST be on the very beginning of the array, contiguously.
-	
 	//This are the TX-queues for ALL ports in the system; index is port_id
-	port_bursts_t phy_ports[PROCESSING_MAX_PORTS];
-	
-#ifdef GNU_LINUX_DPDK_ENABLE_NF
-	//Only for NFs
-	port_bursts_t nf_ports[PROCESSING_MAX_PORTS];
-#endif	
+	port_bursts_t ports[PROCESSING_MAX_PORTS];
 } __rte_cache_aligned core_tasks_t;
 
 /**
@@ -78,6 +69,8 @@ typedef struct core_tasks{
 */
 extern core_tasks_t processing_core_tasks[RTE_MAX_LCORE];
 
+extern switch_port_t* port_list[PROCESSING_MAX_PORTS];
+extern rte_spinlock_t spinlock_conf[RTE_MAX_ETHPORTS];
 
 /**
 * Total number of physical ports (scheduled, so usable by the I/O)
