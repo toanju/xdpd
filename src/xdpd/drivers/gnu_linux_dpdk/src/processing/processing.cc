@@ -52,7 +52,7 @@ rofl_result_t processing_init(void){
 	//char pool_name[POOL_MAX_LEN_NAME];
 
 	//Cleanup
-	//memset(direct_pools, 0, sizeof(direct_pools));
+	memset(direct_pools, 0, sizeof(direct_pools));
 	memset(indirect_pools, 0, sizeof(indirect_pools));
 	memset(processing_core_tasks,0,sizeof(core_tasks_t)*RTE_MAX_LCORE);
 	memset(port_list, 0, sizeof(port_list));
@@ -400,7 +400,7 @@ rofl_result_t processing_schedule_port(switch_port_t* port){
 	rte_spinlock_unlock(&mutex);
 
 	for (i = 0; i < nb_lcore_params; i++) {
-		if (lcore_params[i].port_id == ps->port_id /* XXX(toanju) does this still match? */ &&
+		if (lcore_params[i].port_id == ps->port_id /* XXX(toanju) does this still match? should! */ &&
 		    !processing_core_tasks[lcore_params[i].lcore_id].active) {
 			unsigned lcore_sel = lcore_params[i].lcore_id;
 			if (rte_eal_get_lcore_state(lcore_sel) != WAIT) {

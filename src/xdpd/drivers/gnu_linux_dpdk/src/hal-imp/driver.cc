@@ -218,7 +218,7 @@ hal_result_t hal_driver_init(hal_extension_ops_t* extensions, const char* extra_
 		rte_exit(EXIT_FAILURE, "rte_eal_init failed");
 	optind=1;
 
-	rte_set_log_type(RTE_LOGTYPE_XDPD, 1);
+	rte_set_log_type(RTE_LOGTYPE_XDPD, 0);
 	//Make sure lcore count > 2. Core 0 left for mgmt
 	if( rte_lcore_count() < 2 ){
 		XDPD_ERR(DRIVER_NAME"ERROR: the system must have at last 2 cores. Aborting\n");

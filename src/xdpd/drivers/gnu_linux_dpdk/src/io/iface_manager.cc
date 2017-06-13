@@ -27,7 +27,6 @@
 #define RTE_TEST_TX_DESC_DEFAULT 512
 #define MAX_PKT_BURST 32
 
-extern struct rte_mempool* direct_pools[NB_SOCKETS];
 struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 
 switch_port_t* phy_port_mapping[PORT_MANAGER_MAX_PORTS] = {0};
@@ -121,7 +120,7 @@ static int check_port_config(const unsigned nb_ports)
 
 	for (i = 0; i < nb_lcore_params; ++i) {
 		portid = lcore_params[i].port_id;
-		if (portid >= nb_ports) { // XXX(toanju) this does not cover logical (NF) ports
+		if (portid >= nb_ports + 4 /* nb_kni_ports */) { // XXX(toanju) this does not cover logical (NF) ports
 			printf("port %u is not present on the board\n", portid);
 			return -1;
 		}

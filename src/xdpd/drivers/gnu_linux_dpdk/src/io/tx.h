@@ -129,10 +129,8 @@ tx_pkt(switch_port_t* port, unsigned int queue_id, datapacket_t* pkt){
 	//If burst is full => trigger send
 	if ( unlikely(!tasks->active) || unlikely(len == IO_IFACE_MAX_PKT_BURST)) { //If buffer is full or mgmt core
 		pkt_burst->len = len;
-		assert(0 && "missing implementation");
-		// XXX call transmit_port_queue_tx_burst();
-		//flush_port_queue_tx_burst(port, port_id, pkt_burst, queue_id);
-		return;
+		transmit_port_queue_tx_burst(tasks, port_id);
+		len = 0;
 	}
 
 	pkt_burst->len = len;
@@ -330,12 +328,7 @@ tx_pkt_kni_nf_port(switch_port_t* port, datapacket_t* pkt)
 	mbuf = ((datapacket_dpdk_t*)pkt->platform_state)->mbuf;
 	port_id = ((dpdk_port_state_t*)port->platform_port_state)->port_id;
 
-#ifdef DEBUG
-	if(unlikely(!mbuf)){
-		assert(0);
-		return;
-	}
-#endif
+	assert(mbuf);
 
 	rte_lcore = rte_lcore_id();
         if (rte_lcore == 0xffffffff) rte_lcore=0;
@@ -345,14 +338,7 @@ tx_pkt_kni_nf_port(switch_port_t* port, datapacket_t* pkt)
 
 	//Recover burst container (cache)
 	pkt_burst = &tasks->ports[port_id].tx_queues_burst[0];
-
-#if DEBUG
-	if(unlikely(!pkt_burst)){
-		rte_pktmbuf_free(mbuf);
-		assert(0);
-		return;
-	}
-#endif
+	assert(pkt_burst);
 
 	XDPD_DEBUG_VERBOSE(DRIVER_NAME"[io][kni] Adding packet %p to queue %p (id: %u)\n", pkt, pkt_burst, rte_lcore);
 
@@ -366,8 +352,8 @@ tx_pkt_kni_nf_port(switch_port_t* port, datapacket_t* pkt)
 	{
 		//If buffer is full or mgmt core
 		pkt_burst->len = len;
-		flush_kni_nf_port_burst(port, port_id, pkt_burst);
-		return;
+		transmit_kni_nf_port_burst(tasks, port_id);
+		len = 0;
 	}
 
 	pkt_burst->len = len;

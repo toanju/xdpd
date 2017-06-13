@@ -134,7 +134,7 @@ process_port_rx(unsigned int core_id, switch_port_t* port, uint8_t portid, uint8
 			tmp_port = port;
 		}
 		else if(port->type == PORT_TYPE_NF_EXTERNAL) {
-			tmp_port=port;
+			tmp_port = port;
 		}else
 #endif
 		{

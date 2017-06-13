@@ -68,7 +68,7 @@ typedef struct core_tasks{
 * Processig core tasks 
 */
 extern core_tasks_t processing_core_tasks[RTE_MAX_LCORE];
-
+extern struct rte_mempool* direct_pools[NB_SOCKETS];
 extern switch_port_t* port_list[PROCESSING_MAX_PORTS];
 extern rte_spinlock_t spinlock_conf[RTE_MAX_ETHPORTS];
 
