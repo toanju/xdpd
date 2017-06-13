@@ -45,4 +45,6 @@ test-driver
 src/xdpd/management/pm_timestamp.h
 src/xdpd/management/plugins/pm_timestamp.h
 
+src/xdpd/drivers/intel_fpga
+
 !.gitignore
