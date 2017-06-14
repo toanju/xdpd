@@ -120,7 +120,7 @@ static int check_port_config(const unsigned nb_ports)
 
 	for (i = 0; i < nb_lcore_params; ++i) {
 		portid = lcore_params[i].port_id;
-		if (portid >= nb_ports + 4 /* nb_kni_ports */) { // XXX(toanju) this does not cover logical (NF) ports
+		if (portid >= nb_ports + GNU_LINUX_DPDK_MAX_KNI_IFACES) {
 			printf("port %u is not present on the board\n", portid);
 			return -1;
 		}

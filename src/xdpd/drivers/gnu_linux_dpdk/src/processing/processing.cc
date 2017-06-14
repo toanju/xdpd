@@ -388,11 +388,6 @@ rofl_result_t processing_schedule_port(switch_port_t* port){
 
 	XDPD_DEBUG(DRIVER_NAME"[processing] Scheduling port %s port_id=%p\n", port->name, ps->port_id);
 
-	//Mark port as present (and scheduled) on all cores (TX)
-	for (i = 0; i < RTE_MAX_LCORE; ++i) {
-		processing_core_tasks[i].ports[ps->port_id].present = true; // XXX(toanju) could be removed phy_ports is sufficient
-	}
-
 	//Increment the hash counter
 	running_hash++;
 	ps->scheduled = true;
@@ -400,7 +395,7 @@ rofl_result_t processing_schedule_port(switch_port_t* port){
 	rte_spinlock_unlock(&mutex);
 
 	for (i = 0; i < nb_lcore_params; i++) {
-		if (lcore_params[i].port_id == ps->port_id /* XXX(toanju) does this still match? should! */ &&
+		if (lcore_params[i].port_id == ps->port_id &&
 		    !processing_core_tasks[lcore_params[i].lcore_id].active) {
 			unsigned lcore_sel = lcore_params[i].lcore_id;
 			if (rte_eal_get_lcore_state(lcore_sel) != WAIT) {

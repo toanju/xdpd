@@ -138,7 +138,7 @@ process_port_rx(unsigned int core_id, switch_port_t* port, uint8_t portid, uint8
 		}else
 #endif
 		{
-			tmp_port = phy_port_mapping[mbuf->port]; // XXX (toanju) check if invalid for phy ports now
+			tmp_port = phy_port_mapping[mbuf->port];
 		}
 
 		if(unlikely(!tmp_port)){

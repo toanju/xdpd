@@ -37,7 +37,6 @@ struct mbuf_burst {
 // Port queues
 typedef struct port_bursts{
 	//This are TX-queues of a port
-	bool present; //signals that it is present AND is attached (usable by I/O subsytem)
 	unsigned int core_id; //core id serving RX/TX on this port
 	struct mbuf_burst tx_queues_burst[IO_IFACE_NUM_QUEUES];
 }port_bursts_t;
