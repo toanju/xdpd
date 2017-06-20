@@ -49,7 +49,6 @@
 #define MAX_TX_QUEUE_PER_PORT 1 // for pf: RTE_MAX_ETHPORTS
 #define MAX_RX_QUEUE_PER_PORT 128
 #define IO_IFACE_MAX_PKT_BURST 32
-#define MAX_LCORE_PARAMS 1024
 #define IO_MAX_PACKET_SIZE 1518
 
 //Bufferpool reservoir(PKT_INs); ideally at least X*max_num_lsis

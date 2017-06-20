@@ -19,7 +19,7 @@
 * Temporally header file to define RSS config
 */
 
-#define LCORE_PARAMS_MAX 32
+#define LCORE_PARAMS_MAX 1024
 
 //Auxiliary struct to hold binding between port, queue and lcore
 struct lcore_params {
