@@ -14,6 +14,7 @@
 #include <rte_errno.h> 
 
 #include <fcntl.h>
+#include <set>
 
 #define NB_MBUF                                                                \
 	RTE_MAX((nb_ports * nb_rx_queue * RTE_RX_DESC_DEFAULT +           \
@@ -37,6 +38,8 @@ static int numa_on = 1; /**< NUMA is enabled by default. */
 //static uint16_t nb_rxd = RTE_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TX_DESC_DEFAULT;
 static uint16_t nb_rxd = RTE_RX_DESC_DEFAULT;
+
+static std::set<int> sockets;
 
 static uint8_t
 get_port_n_rx_queues(const uint8_t port)
@@ -80,6 +83,7 @@ static int check_lcore_params(void)
 				  "off \n",
 				  lcore, socketid);
 		}
+		sockets.insert(socketid);
 	}
 	return 0;
 }
