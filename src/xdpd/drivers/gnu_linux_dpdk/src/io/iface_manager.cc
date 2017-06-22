@@ -68,21 +68,19 @@ static int check_lcore_params(void)
 	for (i = 0; i < nb_lcore_params; ++i) {
 		queue = lcore_params[i].queue_id;
 		if (queue >= MAX_RX_QUEUE_PER_PORT) {
-			printf("invalid queue number: %hhu\n", queue);
+			XDPD_ERR("invalid queue number: %hhu\n", queue);
 			return -1;
 		}
 		lcore = lcore_params[i].lcore_id;
 		if (!rte_lcore_is_enabled(lcore)) {
-			printf(
-			    "error: lcore %hhu is not enabled in lcore mask\n",
-			    lcore);
+			XDPD_ERR("error: lcore %hhu is not enabled in lcore mask\n", lcore);
 			return -1;
 		}
 		if ((socketid = rte_lcore_to_socket_id(lcore) != 0) &&
 		    (numa_on == 0)) {
-			printf("warning: lcore %hhu is on socket %d with numa "
-			       "off \n",
-			       lcore, socketid);
+			XDPD_WARN("warning: lcore %hhu is on socket %d with numa "
+				  "off \n",
+				  lcore, socketid);
 		}
 	}
 	return 0;
@@ -98,7 +96,7 @@ init_lcore_rx_queues(void)
                 lcore = lcore_params[i].lcore_id;
                 nb_rx_queue = processing_core_tasks[lcore].n_rx_queue;
                 if (nb_rx_queue >= MAX_RX_QUEUE_PER_LCORE) {
-                        printf("error: too many queues (%u) for lcore: %u\n",
+                        XDPD_ERR("error: too many queues (%u) for lcore: %u\n",
                                 (unsigned)nb_rx_queue + 1, (unsigned)lcore);
                         return -1;
                 } else {
@@ -108,7 +106,7 @@ init_lcore_rx_queues(void)
                                 lcore_params[i].queue_id;
                         processing_core_tasks[lcore].n_rx_queue++; 
                 }
-		printf("init_lcore_rx_queue i=%d lcore=%d #lcore_queues=%d\n", i, lcore, processing_core_tasks[lcore].n_rx_queue);
+		XDPD_INFO("init_lcore_rx_queue i=%d lcore=%d #lcore_queues=%d\n", i, lcore, processing_core_tasks[lcore].n_rx_queue);
         }
         return 0;
 }
@@ -121,7 +119,7 @@ static int check_port_config(const unsigned nb_ports)
 	for (i = 0; i < nb_lcore_params; ++i) {
 		portid = lcore_params[i].port_id;
 		if (portid >= nb_ports + GNU_LINUX_DPDK_MAX_KNI_IFACES) {
-			printf("port %u is not present on the board\n", portid);
+			XDPD_ERR("port %u is not present on the board\n", portid);
 			return -1;
 		}
 	}
@@ -149,16 +147,12 @@ static int init_mem(unsigned nb_mbuf)
 		}
 		if (direct_pools[socketid] == NULL) {
 			snprintf(s, sizeof(s), "mbuf_pool_%d", socketid);
-			direct_pools[socketid] = rte_pktmbuf_pool_create(
-			    s, nb_mbuf, MEMPOOL_CACHE_SIZE, 0,
-			    RTE_MBUF_DEFAULT_BUF_SIZE, socketid);
+			direct_pools[socketid] = rte_pktmbuf_pool_create(s, nb_mbuf, MEMPOOL_CACHE_SIZE, 0,
+									 RTE_MBUF_DEFAULT_BUF_SIZE, socketid);
 			if (direct_pools[socketid] == NULL)
-				rte_exit(EXIT_FAILURE,
-					 "Cannot init mbuf pool on socket %d\n",
-					 socketid);
+				rte_exit(EXIT_FAILURE, "Cannot init mbuf pool on socket %d\n", socketid);
 			else
-				printf("Allocated mbuf pool on socket %d\n",
-				       socketid);
+				XDPD_INFO("Allocated mbuf pool on socket %d\n", socketid);
 		}
 	}
 	return 0;
@@ -168,7 +162,7 @@ static void print_ethaddr(const char *name, const struct ether_addr *eth_addr)
 {
 	char buf[ETHER_ADDR_FMT_SIZE];
 	ether_format_addr(buf, ETHER_ADDR_FMT_SIZE, eth_addr);
-	printf("%s%s", name, buf);
+	XDPD_INFO("%s%s", name, buf);
 }
 
 //Initializes the pipeline structure and launches the port 
@@ -208,7 +202,9 @@ static switch_port_t* configure_port(uint8_t port_id){
 		snprintf (port_name, SWITCH_PORT_MAX_LEN_NAME, "ge%u",port_id);
 	}
 
-	XDPD_INFO(DRIVER_NAME"[iface_manager] configuring port %s port_id=%d\n", port_name, port_id);
+	XDPD_INFO(DRIVER_NAME "[iface_manager] configuring port %s port_id=%d, max_tx_queues=%d, max_rx_queues=%d, "
+			      "speed_capa=0x%x\n",
+		  port_name, port_id, dev_info.max_tx_queues, dev_info.max_rx_queues, dev_info.speed_capa);
 	//Initialize pipeline port
 	port = switch_port_init(port_name, false, PORT_TYPE_PHYSICAL, PORT_STATE_NONE);
 	if(!port)
@@ -244,11 +240,20 @@ static switch_port_t* configure_port(uint8_t port_id){
 	nb_rx_queue = get_port_n_rx_queues(port_id);
 	n_tx_queue = MAX_TX_QUEUE_PER_PORT; // for pf could be rte_lcore_count(); must always equal(=1) for vf
 
+	// check rx
+	if (nb_rx_queue > dev_info.max_rx_queues) {
+		rte_exit(EXIT_FAILURE, "Fail: nb_rx_queue(%d) is greater than max_rx_queues(%d)\n", nb_rx_queue,
+			 dev_info.max_rx_queues);
+	}
+	if (n_tx_queue > dev_info.max_tx_queues) {
+		rte_exit(EXIT_FAILURE, "Fail: n_tx_queue(%d) is greater than max_tx_queues(%d)\n", n_tx_queue,
+			 dev_info.max_tx_queues);
+	}
+
 	if (n_tx_queue > MAX_TX_QUEUE_PER_PORT)
 		n_tx_queue = MAX_TX_QUEUE_PER_PORT;
 
-	printf("Creating queues: nb_rxq=%d nb_txq=%u... ", nb_rx_queue,
-	       (unsigned)n_tx_queue);
+	XDPD_INFO("Creating queues: nb_rxq=%d nb_txq=%u... ", nb_rx_queue, (unsigned)n_tx_queue);
 
 	ret = rte_eth_dev_configure(port_id, nb_rx_queue, (uint16_t)n_tx_queue,
 				    &port_conf);
@@ -260,7 +265,7 @@ static switch_port_t* configure_port(uint8_t port_id){
 	//Recover MAC address
 	rte_eth_macaddr_get(port_id, &ports_eth_addr[port_id]);
 	print_ethaddr(" Address:", &ports_eth_addr[port_id]);
-	printf(", ");
+	XDPD_INFO(", ");
 
 	ret = init_mem(NB_MBUF);
 	if (ret < 0)
@@ -304,20 +309,19 @@ static switch_port_t* configure_port(uint8_t port_id){
 	/* init one TX queue */
 	socketid = (uint8_t)rte_lcore_to_socket_id(rte_get_master_lcore());
 
-	printf("txq=%d,%d,%d ", port_id, 0, socketid);
-	fflush(stdout);
+	XDPD_INFO("txq: port_id=%d, queue_id=%d, socket_id=%d, nb_txd=%d\n", port_id, 0, socketid, nb_txd);
 
 	rte_eth_dev_info_get(port_id, &dev_info);
 	txconf = &dev_info.default_txconf;
 	if (port_conf.rxmode.jumbo_frame)
 		txconf->txq_flags = 0;
+
 	ret = rte_eth_tx_queue_setup(port_id, 0, nb_txd, socketid, txconf);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup: err=%d, "
 				       "port=%d\n",
 			 ret, port_id);
 
-	printf("\n");
 #endif
 
 	//Add TX queues to the pipeline
@@ -388,8 +392,7 @@ static switch_port_t* configure_port(uint8_t port_id){
 		qconf = &processing_core_tasks[lcore_id];
 		qconf->tx_queue_id = 0;
 
-		printf("\nInitializing rx queues on lcore %u ... ", lcore_id);
-		fflush(stdout);
+		XDPD_INFO("\nInitializing rx queues on lcore %u ... ", lcore_id);
 		/* init RX queues */
 		for (queue = 0; queue < qconf->n_rx_queue; ++queue) {
 			uint8_t portid = qconf->rx_queue_list[queue].port_id;
@@ -404,8 +407,7 @@ static switch_port_t* configure_port(uint8_t port_id){
 			else
 				socketid = 0;
 
-			printf("rxq=%d,%d,%d ", portid, queueid, socketid);
-			fflush(stdout);
+			XDPD_INFO("rxq=%d,%d,%d(%d) ", portid, queueid, socketid, nb_rxd);
 
 			ret = rte_eth_rx_queue_setup(portid, queueid, nb_rxd,
 						     socketid, NULL,
@@ -417,7 +419,7 @@ static switch_port_t* configure_port(uint8_t port_id){
 					 ret, portid);
 		}
 	}
-	printf("\n");
+	XDPD_INFO("\n");
 #endif
 
 	//Fill-in dpdk port state
