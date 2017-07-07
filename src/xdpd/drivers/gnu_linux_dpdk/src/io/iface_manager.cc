@@ -9,22 +9,37 @@
 #include "nf_iface_manager.h"
 
 #include <assert.h> 
+extern "C" {
 #include <rte_common.h> 
 #include <rte_malloc.h> 
 #include <rte_errno.h> 
+#include <rte_eth_ctrl.h>
+
+#ifdef RTE_LIBRTE_IXGBE_PMD
+#include <rte_pmd_ixgbe.h>
+#endif
+#ifdef RTE_LIBRTE_I40E_PMD
+#include <rte_pmd_i40e.h>
+#endif
+}
 
 #include <fcntl.h>
 #include <set>
 
-#define NB_MBUF                                                                \
-	RTE_MAX((nb_ports * nb_rx_queue * RTE_RX_DESC_DEFAULT +           \
-		 nb_ports * nb_lcores * MAX_PKT_BURST +                        \
-		 nb_ports * n_tx_queue * RTE_TX_DESC_DEFAULT +            \
-		 nb_lcores * MEMPOOL_CACHE_SIZE),                              \
+#define NB_MBUF                                                                                                        \
+	RTE_MAX((nb_ports * nb_rx_queue * RTE_RX_DESC_DEFAULT + nb_ports * nb_lcores * MAX_PKT_BURST +                 \
+		 nb_ports * n_tx_queue * RTE_TX_DESC_DEFAULT + nb_lcores * MEMPOOL_CACHE_SIZE),                        \
 		(unsigned)8192)
 
 #define MEMPOOL_CACHE_SIZE 256
 #define MAX_PKT_BURST 32
+
+#define VLAN_ANTI_SPOOF
+#define VLAN_INSERT
+#define VLAN_RX_FILTER
+#define VLAN_STRIP
+#define VLAN_ADD_MAC
+//#define VLAN_SET_MACVLAN_FILTER
 
 struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 
@@ -41,8 +56,237 @@ static uint16_t nb_rxd = RTE_RX_DESC_DEFAULT;
 
 static std::set<int> sockets;
 
-static uint8_t
-get_port_n_rx_queues(const uint8_t port)
+// XXX(toanju) these values need a proper configuration
+int port_vf_id[RTE_MAX_ETHPORTS] = {-1, 0, 1, -1, 0, 1};
+int port_parent_id_of_vf[RTE_MAX_ETHPORTS] = {-1, 0, 0, -1, 3, 3};
+uint16_t port_pvid[RTE_MAX_ETHPORTS] = {0, 101, 102, 0, 201, 202};
+struct ether_addr port_ether_addr[RTE_MAX_ETHPORTS][ETHER_ADDR_LEN] = {
+    {0}, {0x0e, 0x11, 0x11, 0x11, 0x01, 0x03}, {0x0e, 0x11, 0x11, 0x11, 0x01, 0x04},
+    {0}, {0x0e, 0x11, 0x11, 0x11, 0x02, 0x03}, {0x0e, 0x11, 0x11, 0x11, 0x02, 0x04}};
+
+#ifdef VLAN_ADD_MAC
+static void set_vf_mac_addr(uint8_t port_id, uint16_t vf_id, struct ether_addr *mac_addr)
+{
+	int ret = -ENOTSUP;
+
+	//if (port_id_is_invalid(res->port_id, ENABLED_WARN))
+	//	return;
+
+#ifdef RTE_LIBRTE_IXGBE_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_ixgbe_set_vf_mac_addr(port_id, vf_id, mac_addr);
+#endif
+#ifdef RTE_LIBRTE_I40E_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_i40e_set_vf_mac_addr(port_id, vf_id, mac_addr);
+#endif
+
+	switch (ret) {
+	case 0:
+		break;
+	case -EINVAL:
+		printf("invalid vf_id %d or mac_addr\n", vf_id);
+		break;
+	case -ENODEV:
+		printf("invalid port_id %d\n", port_id);
+		break;
+	case -ENOTSUP:
+		printf("function not implemented\n");
+		break;
+	default:
+		printf("programming error: (%s)\n", strerror(-ret));
+		assert(0 && "programming error");
+	}
+}
+#endif
+
+#ifdef VLAN_SET_MACVLAN_FILTER
+static int set_vf_macvlan_filter(uint8_t port_id, uint8_t vf_id, struct ether_addr *address, const char *filter_type, int is_on)
+{
+	int ret = -1;
+	struct rte_eth_mac_filter filter;
+
+	assert(filter_type);
+
+	memset(&filter, 0, sizeof(struct rte_eth_mac_filter));
+
+	(void)rte_memcpy(&filter.mac_addr, &address, ETHER_ADDR_LEN);
+
+	/* set VF MAC filter */
+	filter.is_vf = 1;
+
+	/* set VF ID */
+	filter.dst_id = vf_id;
+
+	if (!strcmp(filter_type, "exact-mac"))
+		filter.filter_type = RTE_MAC_PERFECT_MATCH;
+	else if (!strcmp(filter_type, "exact-mac-vlan"))
+		filter.filter_type = RTE_MACVLAN_PERFECT_MATCH;
+	else if (!strcmp(filter_type, "hashmac"))
+		filter.filter_type = RTE_MAC_HASH_MATCH;
+	else if (!strcmp(filter_type, "hashmac-vlan"))
+		filter.filter_type = RTE_MACVLAN_HASH_MATCH;
+	else {
+		printf("bad filter type");
+		return ret;
+	}
+
+	if (is_on)
+		ret = rte_eth_dev_filter_ctrl(port_id, RTE_ETH_FILTER_MACVLAN, RTE_ETH_FILTER_ADD, &filter);
+	else
+		ret = rte_eth_dev_filter_ctrl(port_id, RTE_ETH_FILTER_MACVLAN, RTE_ETH_FILTER_DELETE, &filter);
+
+	if (ret < 0)
+		printf("bad set MAC hash parameter, return code = %d\n", ret);
+
+	return ret;
+}
+#endif
+
+#ifdef VLAN_ANTI_SPOOF
+static void set_vf_vlan_anti_spoof(uint8_t port_id, uint32_t vf_id, int is_on)
+{
+	int ret = -ENOTSUP;
+
+	//if (port_id_is_invalid(port_id, ENABLED_WARN))
+	//	return;
+
+#ifdef RTE_LIBRTE_IXGBE_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_ixgbe_set_vf_vlan_anti_spoof(port_id, vf_id, is_on);
+#endif
+#ifdef RTE_LIBRTE_I40E_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_i40e_set_vf_vlan_anti_spoof(port_id, vf_id, is_on);
+#endif
+
+	switch (ret) {
+	case 0:
+		break;
+	case -EINVAL:
+		printf("invalid vf_id %d\n", vf_id);
+		break;
+	case -ENODEV:
+		printf("invalid port_id %d\n", port_id);
+		break;
+	case -ENOTSUP:
+		printf("function not implemented\n");
+		break;
+	default:
+		printf("programming error: (%s)\n", strerror(-ret));
+	}
+}
+#endif
+
+#ifdef VLAN_INSERT
+static void vf_vlan_insert(uint8_t port_id, uint16_t vf_id, uint16_t vlan_id)
+{
+	int ret = -ENOTSUP;
+
+	//if (port_id_is_invalid(port_id, ENABLED_WARN))
+	//	return;
+
+#ifdef RTE_LIBRTE_IXGBE_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_ixgbe_set_vf_vlan_insert(port_id, vf_id, vlan_id);
+#endif
+#ifdef RTE_LIBRTE_I40E_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_i40e_set_vf_vlan_insert(port_id, vf_id, vlan_id);
+#endif
+
+	switch (ret) {
+	case 0:
+		break;
+	case -EINVAL:
+		printf("invalid vf_id %d or vlan_id %d\n", vf_id, vlan_id);
+		break;
+	case -ENODEV:
+		printf("invalid port_id %d\n", port_id);
+		break;
+	case -ENOTSUP:
+		printf("function not implemented\n");
+		break;
+	default:
+		printf("programming error: (%s)\n", strerror(-ret));
+		assert(0 && "programming error");
+	}
+}
+#endif
+
+#ifdef VLAN_RX_FILTER
+static void vf_rx_filter_vlan(uint16_t vlan_id, uint8_t port_id, uint64_t vf_mask, int is_add)
+{
+	int ret = -ENOTSUP;
+
+	//if (port_id_is_invalid(port_id, ENABLED_WARN))
+	//	return;
+
+#ifdef RTE_LIBRTE_IXGBE_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_ixgbe_set_vf_vlan_filter(port_id, vlan_id, vf_mask, is_add);
+#endif
+#ifdef RTE_LIBRTE_I40E_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_i40e_set_vf_vlan_filter(port_id, vlan_id, vf_mask, is_add);
+#endif
+
+	switch (ret) {
+	case 0:
+		break;
+	case -EINVAL:
+		printf("invalid vlan_id %d or vf_mask %" PRIu64 "\n", vlan_id, vf_mask);
+		break;
+	case -ENODEV:
+		printf("invalid port_id %d\n", port_id);
+		break;
+	case -ENOTSUP:
+		printf("function not implemented or supported\n");
+		break;
+	default:
+		printf("programming error: (%s)\n", strerror(-ret));
+		assert(0 && "programming error");
+	}
+}
+#endif
+
+#ifdef VLAN_STRIP
+static void vf_enable_strip_vlan(uint8_t port_id, uint16_t vf_id, int is_on)
+{
+	int ret = -ENOTSUP;
+
+	//if (port_id_is_invalid(port_id, ENABLED_WARN))
+	//	return;
+
+#ifdef RTE_LIBRTE_IXGBE_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_ixgbe_set_vf_vlan_stripq(port_id, vf_id, is_on);
+#endif
+#ifdef RTE_LIBRTE_I40E_PMD
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_i40e_set_vf_vlan_stripq(port_id, vf_id, is_on);
+#endif
+
+	switch (ret) {
+	case 0:
+		break;
+	case -EINVAL:
+		printf("invalid vf_id %d or is_on %d\n", vf_id, is_on);
+		break;
+	case -ENODEV:
+		printf("invalid port_id %d\n", port_id);
+		break;
+	case -ENOTSUP:
+		printf("function not implemented\n");
+		break;
+	default:
+		printf("programming error: (%s)\n", strerror(-ret));
+		assert(0 && "programming error");
+	}
+}
+#endif
+
+static uint8_t get_port_n_rx_queues(const uint8_t port)
 {
 	int queue = -1;
 	uint16_t i;
@@ -167,9 +411,9 @@ static void print_ethaddr(const char *name, const struct ether_addr *eth_addr)
 	XDPD_INFO("%s%s", name, buf);
 }
 
-//Initializes the pipeline structure and launches the port 
-static switch_port_t* configure_port(uint8_t port_id){
-
+//Initializes the pipeline structure and launches the port
+static switch_port_t *configure_port(uint8_t port_id)
+{
 	int ret;
 	switch_port_t* port;
 	struct core_tasks *qconf;
@@ -207,6 +451,10 @@ static switch_port_t* configure_port(uint8_t port_id){
 	XDPD_INFO(DRIVER_NAME "[iface_manager] configuring port %s port_id=%d, max_tx_queues=%d, max_rx_queues=%d, "
 			      "speed_capa=0x%x\n",
 		  port_name, port_id, dev_info.max_tx_queues, dev_info.max_rx_queues, dev_info.speed_capa);
+
+	// Set rx and tx queues
+	memset(&port_conf, 0, sizeof(port_conf));
+
 	//Initialize pipeline port
 	port = switch_port_init(port_name, false, PORT_TYPE_PHYSICAL, PORT_STATE_NONE);
 	if(!port)
@@ -220,21 +468,22 @@ static switch_port_t* configure_port(uint8_t port_id){
 		return NULL;
 	}
 
-	//Set rx and tx queues
-	memset(&port_conf, 0, sizeof(port_conf));
-
-	port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
-	port_conf.rxmode.max_rx_pkt_len = IO_MAX_PACKET_SIZE;
-	port_conf.rxmode.split_hdr_size = 0;
 	port_conf.rxmode.header_split = 0;   /**< Header Split disabled */
 	port_conf.rxmode.hw_ip_checksum = 1; /**< IP checksum offload enabled */
-	port_conf.rxmode.hw_vlan_filter = 0; /**< VLAN filtering disabled */
-	port_conf.rxmode.jumbo_frame = 0;  /**< Jumbo Frame Support disabled */
-	port_conf.rxmode.hw_strip_crc = 1; /**< CRC stripped by hardware */
+	port_conf.rxmode.hw_vlan_strip = 1;  /**< VLAN strip enable. */
+	port_conf.rxmode.hw_vlan_extend = 0; /**< Extended VLAN disabled */
+	port_conf.rxmode.hw_vlan_filter = 1; /**< VLAN filtering enalbed */
+	port_conf.rxmode.hw_strip_crc = 1;   /**< CRC stripped by hardware */
+	port_conf.rxmode.jumbo_frame = 0;    /**< Jumbo Frame Support disabled */
+	port_conf.rxmode.enable_scatter = 0; /**< Enable scatter packets rx handler */
+	port_conf.rxmode.enable_lro = 0;     /**< Enable LRO */
 
+	port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
+	port_conf.rxmode.split_hdr_size = 0;
+	port_conf.rxmode.max_rx_pkt_len = IO_MAX_PACKET_SIZE;
+	
 	port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
 	port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP;
-
 	port_conf.txmode.mq_mode = ETH_MQ_TX_NONE;
 
 	nb_ports = rte_eth_dev_count();
@@ -255,14 +504,72 @@ static switch_port_t* configure_port(uint8_t port_id){
 	if (n_tx_queue > MAX_TX_QUEUE_PER_PORT)
 		n_tx_queue = MAX_TX_QUEUE_PER_PORT;
 
-	XDPD_INFO("Creating queues: nb_rxq=%d nb_txq=%u... ", nb_rx_queue, (unsigned)n_tx_queue);
+	XDPD_INFO("Creating queues: nb_rxq=%d nb_txq=%u...", nb_rx_queue, (unsigned)n_tx_queue);
 
 	ret = rte_eth_dev_configure(port_id, nb_rx_queue, (uint16_t)n_tx_queue,
 				    &port_conf);
 	if (ret < 0)
-		rte_exit(EXIT_FAILURE,
-			 "Cannot configure device: err=%d, port=%d\n", ret,
-			 port_id);
+		rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d, port=%d\n", ret, port_id);
+
+#if 0 
+	// set pvid
+	if (port_pvid[port_id]) {
+		XDPD_INFO(" pvid:%d", port_pvid[port_id]);
+		ret = rte_eth_dev_set_vlan_pvid(port_id, port_pvid[port_id], 1);
+		if (ret < 0)
+			rte_exit(EXIT_FAILURE, "Cannot configure pvid: err=%d, port=%d\n", ret, port_id);
+	}
+#endif
+
+	if (!is_zero_ether_addr(port_ether_addr[port_id])) {
+		print_ethaddr(" added:", port_ether_addr[port_id]);
+		ret = rte_eth_dev_mac_addr_add(port_id, port_ether_addr[port_id], 0);
+		if (ret < 0)
+			rte_exit(EXIT_FAILURE, "Cannot configure ether addr: err=%d, port=%d\n", ret, port_id);
+		
+		
+
+		if (port_vf_id[port_id] != -1) {
+			XDPD_INFO(" broadcast:1(port %d, parent %d, vf_id %d)", port_id, port_parent_id_of_vf[port_id],
+				  port_vf_id[port_id]);
+
+			ret = rte_eth_dev_mac_addr_add(port_parent_id_of_vf[port_id], port_ether_addr[port_id],
+						       port_vf_id[port_id]);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE,
+					 "Cannot configure mac on vf: err=%d, port=%d, parent=%d, vf_id=%d\n", ret,
+					 port_id, port_parent_id_of_vf[port_id], port_vf_id[port_id]);
+
+			ret = rte_pmd_i40e_set_vf_broadcast(port_parent_id_of_vf[port_id], port_vf_id[port_id], 1);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE,
+					 "Cannot configure broadcast: err=%d, port=%d, parent=%d, vf_id=%d\n", ret,
+					 port_id, port_parent_id_of_vf[port_id], port_vf_id[port_id]);
+
+#ifdef VLAN_ANTI_SPOOF
+			set_vf_vlan_anti_spoof(port_parent_id_of_vf[port_id], port_vf_id[port_id], 0);
+#endif
+#ifdef VLAN_INSERT
+			vf_vlan_insert(port_parent_id_of_vf[port_id], port_vf_id[port_id], port_pvid[port_id]);
+#endif
+#ifdef VLAN_RX_FILTER
+			vf_rx_filter_vlan(port_pvid[port_id], port_parent_id_of_vf[port_id], 0x03, 1);
+#endif
+#ifdef VLAN_STRIP
+			vf_enable_strip_vlan(port_parent_id_of_vf[port_id], port_vf_id[port_id], 1);
+#endif
+#ifdef VLAN_ADD_MAC
+			// XXX(tonaju) there is a set mac function as well
+			set_vf_mac_addr(port_parent_id_of_vf[port_id], port_vf_id[port_id], port_ether_addr[port_id]);
+#endif
+#ifdef VLAN_SET_MACVLAN_FILTER
+			set_vf_macvlan_filter(port_parent_id_of_vf[port_id], port_vf_id[port_id],
+					      port_ether_addr[port_id], "exact-mac-vlan", 1);
+#endif
+		}
+	}
+
+	//set_vf_macvlan();
 
 	//Recover MAC address
 	rte_eth_macaddr_get(port_id, &ports_eth_addr[port_id]);
@@ -571,6 +878,11 @@ rofl_result_t iface_manager_discover_system_ports(void){
 	}
 
 	for (i = 0; i < nb_phy_ports; ++i) {
+		// only VF ports for now
+		if (port_vf_id[i] == -1) {
+			continue;
+		}
+
 		if(! ( port = configure_port(i) ) ){
 			XDPD_ERR(DRIVER_NAME"[iface_manager] Unable to initialize port-id: %u\n", i);
 			return ROFL_FAILURE;

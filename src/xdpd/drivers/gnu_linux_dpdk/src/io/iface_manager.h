@@ -8,6 +8,7 @@
 #include <rofl_datapath.h>
 #include "../config.h"
 #include "../config_rss.h"
+extern "C" {
 #include <rte_config.h> 
 #include <rte_common.h> 
 #include <rte_eal.h> 
@@ -19,7 +20,7 @@
 #include <rte_ring.h>
 #include <rte_launch.h>
 #include <rte_kni.h>
-
+}
 #include <rofl/datapath/pipeline/physical_switch.h>
 #include <rofl/datapath/pipeline/common/datapacket.h>
 #include <rofl/datapath/pipeline/openflow/of_switch.h>
