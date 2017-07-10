@@ -46,7 +46,7 @@
 //Number of output queues per interface
 #define IO_IFACE_NUM_QUEUES 1 //8
 #define MAX_RX_QUEUE_PER_LCORE 16
-#define MAX_TX_QUEUE_PER_PORT 1 // for pf: RTE_MAX_ETHPORTS
+#define MAX_TX_QUEUE_PER_PORT 16 // for pf: RTE_MAX_ETHPORTS
 #define MAX_RX_QUEUE_PER_PORT 128
 #define IO_IFACE_MAX_PKT_BURST 32
 #define IO_MAX_PACKET_SIZE 1518

@@ -51,7 +51,6 @@ using namespace xdpd::gnu_linux;
 #define DRIVER_EXTRA_POOL_SIZE "pool_size"
 #define DRIVER_EXTRA_LCORE_PARAMS "lcore_params"
 
-
 //Some useful macros
 #define STR(a) #a
 #define XSTR(a) STR(a)
@@ -74,8 +73,7 @@ using namespace xdpd::gnu_linux;
 #define GNU_LINUX_DPDK_EXTRA_PARAMS "This driver has a number of optional \"extra parameters\" that can be used using -e option, specifying them as key1=value1;key2=value2... :\n\n"\
 "   " DRIVER_EXTRA_COREMASK "=<hexadecimal mask>\t - Overrides default coremaskDPDK EAL coremask. Default: " XSTR(DEFAULT_RTE_CORE_MASK) ".\n"\
 "   " DRIVER_EXTRA_POOL_SIZE "=<#bufs>;\t\t - Override the number of MBUFs or size of the pool (per CPU socket). Default: " XSTR(DEFAULT_NB_MBUF) ".\n"\
-"   " DRIVER_EXTRA_LCORE_PARAMS "=P1:Q1:C1,P2:Q2:C2...;\t\t - Override lcore_params (VF). Where Pi = port_id, Qi = Queue id and Ci = lcore id. Default: TODO.\n\n"\
-"The use of \"extra-params\" is highly discouraged for production machines. Tunning of the config.h is preferable.\n\n"
+"   " DRIVER_EXTRA_LCORE_PARAMS "=L1:P1:Q1:C1,L2:P2:Q2:C2...;\t\t - Override lcore_params (VF). Where Li = lsi_id Pi = port_id, Qi = Queue id and Ci = lcore id. Default: TODO.\n\n"
 
 
 //Number of MBUFs per pool (per CPU socket)
@@ -91,38 +89,40 @@ static rofl_result_t parse_extra_lcore_params(std::string& val){
 	int i;
 	std::string param, att;
 
-	//Format is lcore_params=X1:Y1:Z1,X2:Y2:Z2,...;
+	//Format is lcore_params=W1:X1:Y1:Z1,W2:X2:Y2:Z2,...;
 	//Split into ,
 	std::istringstream ss_p(val);
 	int param_cnt = 0;
 	while(std::getline(ss_p, param, ',')) {
-		//Parse triad
+		//Parse quad
 		int att_cnt = 0;
 		std::istringstream ss_a(param);
 		while(std::getline(ss_a, att, ':')) {
 			//Parse number
 			int at = atoi(att.c_str());
 			switch(att_cnt++){
-				case 0: lcore_params[param_cnt].port_id = at;
+				case 0: lcore_params[param_cnt].lsi_id = at;
 					break;
-				case 1: lcore_params[param_cnt].queue_id = at;
+				case 1: lcore_params[param_cnt].port_id = at;
 					break;
-				case 2: lcore_params[param_cnt].lcore_id = at;
+				case 2: lcore_params[param_cnt].queue_id = at;
+					break;
+				case 3: lcore_params[param_cnt].lcore_id = at;
 					break;
 				default:
-					XDPD_ERR(DRIVER_NAME"ERROR: unable to parse lcore_params. Malformed triad\n");
+					XDPD_ERR(DRIVER_NAME"ERROR: unable to parse lcore_params. Malformed quad\n");
 					return ROFL_FAILURE;
 			}
 
 		}
 
-		if(att_cnt != 3){
-			XDPD_ERR(DRIVER_NAME"ERROR: unable to parse lcore_params. Malformed triad\n");
+		if(att_cnt != 4){
+			XDPD_ERR(DRIVER_NAME"ERROR: unable to parse lcore_params. Malformed quad\n");
 			return ROFL_FAILURE;
 		}
 
 		if(++param_cnt == LCORE_PARAMS_MAX){
-			XDPD_ERR(DRIVER_NAME"ERROR: unable to parse lcore_params. Number of triads beyond LCORE_PARAMS_MAX(%u). Consider increasing it at compile time in config_rss.h\n", LCORE_PARAMS_MAX);
+			XDPD_ERR(DRIVER_NAME"ERROR: unable to parse lcore_params. Number of quads beyond LCORE_PARAMS_MAX(%u). Consider increasing it at compile time in config_rss.h\n", LCORE_PARAMS_MAX);
 			return ROFL_FAILURE;
 		}
 	}
@@ -130,10 +130,9 @@ static rofl_result_t parse_extra_lcore_params(std::string& val){
 	nb_lcore_params = param_cnt;
 
 	XDPD_DEBUG(DRIVER_NAME" Overriding lcore_params with:\n");
-	for(i=0; i<nb_lcore_params; ++i){
-		XDPD_DEBUG(DRIVER_NAME" {%u:%u:%u}\n", lcore_params[i].port_id,
-					lcore_params[i].queue_id,
-					lcore_params[i].lcore_id);
+	for (i = 0; i < nb_lcore_params; ++i) {
+		XDPD_DEBUG(DRIVER_NAME " {%u:%u:%u:%u}\n", lcore_params[i].lsi_id, lcore_params[i].port_id,
+			   lcore_params[i].queue_id, lcore_params[i].lcore_id);
 	}
 
 	return ROFL_SUCCESS;
@@ -218,7 +217,12 @@ hal_result_t hal_driver_init(hal_extension_ops_t* extensions, const char* extra_
 		rte_exit(EXIT_FAILURE, "rte_eal_init failed");
 	optind=1;
 
-	rte_set_log_type(RTE_LOGTYPE_XDPD, 0);
+	int xdpd_debug = 0;
+#ifdef DEBUG
+	xdpd_debug = 1;
+#endif
+	rte_set_log_type(RTE_LOGTYPE_XDPD, xdpd_debug);
+
 	//Make sure lcore count > 2. Core 0 left for mgmt
 	if( rte_lcore_count() < 2 ){
 		XDPD_ERR(DRIVER_NAME"ERROR: the system must have at last 2 cores. Aborting\n");

@@ -38,18 +38,18 @@ inline void transmit_port_queue_tx_burst(core_tasks_t *task, uint8_t port_id)
 	uint16_t queue_id;
 	switch_port_t* port;
 
-	queue_id = task->tx_queue_id;
-	m_table = (struct rte_mbuf **)task->ports[port_id].tx_queues_burst[queue_id].burst;
-	len = task->ports[port_id].tx_queues_burst[queue_id].len;
+	queue_id = task->tx_queue_id[port_id];
+	m_table = (struct rte_mbuf **)task->tx_mbufs[port_id].burst;
+	len = task->tx_mbufs[port_id].len;
 	port = phy_port_mapping[port_id];
 
 	RTE_LOG(INFO, XDPD, DRIVER_NAME "[io][%s(%u)] Trying to transmit burst on port queue_id %u of length %u\n",
 		port->name, port_id, queue_id, len);
 
 	//Send burst
-	rte_spinlock_lock(&spinlock_conf[port_id]);
+	//rte_spinlock_lock(&spinlock_conf[port_id]);
 	ret = rte_eth_tx_burst(port_id, queue_id, m_table, len);
-	rte_spinlock_unlock(&spinlock_conf[port_id]);
+	//rte_spinlock_unlock(&spinlock_conf[port_id]);
 
 	if (ret)
 		RTE_LOG(
@@ -116,8 +116,7 @@ tx_pkt(switch_port_t* port, unsigned int queue_id, datapacket_t* pkt){
 	core_tasks_t* tasks = &processing_core_tasks[rte_lcore];
 
 	//Recover burst container (cache)
-	pkt_burst = &tasks->ports[port_id].tx_queues_burst[queue_id];
-	assert(pkt_burst);
+	pkt_burst = &tasks->tx_mbufs[port_id];
 
 	XDPD_DEBUG_VERBOSE(DRIVER_NAME"[io] Adding packet %p to queue %p (id: %u)\n", pkt, pkt_burst, rte_lcore);
 
@@ -221,7 +220,7 @@ tx_pkt_shmem_nf_port(switch_port_t* port, datapacket_t* pkt)
         core_tasks_t* tasks = &processing_core_tasks[rte_lcore];
         
 	//Recover burst container (cache)
-	pkt_burst = &tasks->ports[port_state->state.port_id].tx_queues_burst[0];
+	pkt_burst = &tasks->tx_mbufs[port_state->state.port_id];
 
 	assert(pkt_burst);
 
@@ -251,13 +250,11 @@ transmit_kni_nf_port_burst(core_tasks_t *task, uint8_t port_id)
 	uint16_t ret;
 	struct rte_mbuf **m_table;
 	unsigned len;
-	uint16_t queue_id;
 	switch_port_t* port;
 	dpdk_kni_port_state *port_state;
 
-	queue_id = task->tx_queue_id;
-	m_table = (struct rte_mbuf **)task->ports[port_id].tx_queues_burst[queue_id].burst;
-	len = task->ports[port_id].tx_queues_burst[queue_id].len;
+	m_table = (struct rte_mbuf **)task->tx_mbufs[port_id].burst;
+	len = task->tx_mbufs[port_id].len;
 	port = nf_port_mapping[port_id - nb_phy_ports];
 
 	assert(port);
@@ -337,7 +334,7 @@ tx_pkt_kni_nf_port(switch_port_t* port, datapacket_t* pkt)
         core_tasks_t* tasks = &processing_core_tasks[rte_lcore];
 
 	//Recover burst container (cache)
-	pkt_burst = &tasks->ports[port_id].tx_queues_burst[0];
+	pkt_burst = &tasks->tx_mbufs[port_id];
 	assert(pkt_burst);
 
 	XDPD_DEBUG_VERBOSE(DRIVER_NAME"[io][kni] Adding packet %p to queue %p (id: %u)\n", pkt, pkt_burst, rte_lcore);

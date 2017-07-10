@@ -23,6 +23,7 @@
 
 //Auxiliary struct to hold binding between port, queue and lcore
 struct lcore_params {
+	uint8_t lsi_id;
 	uint8_t port_id;
 	uint8_t queue_id;
 	uint8_t lcore_id;

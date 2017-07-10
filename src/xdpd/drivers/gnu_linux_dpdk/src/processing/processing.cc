@@ -203,6 +203,12 @@ int processing_core_process_packets(void* not_used){
 	//Last drain tsc
 	prev_tsc = 0;
 
+	for (i = 0; i < task->n_rx_queue; i++) {
+		portid = task->rx_queue_list[i].port_id;
+		queueid = task->rx_queue_list[i].queue_id;
+		RTE_LOG(INFO, XDPD, " -- lcoreid=%u portid=%hhu rxqueueid=%hhu\n", core_id, portid, queueid);
+	}
+
 	RTE_LOG(INFO, XDPD, "run task on core_id=%d\n", core_id);
 
 	while(likely(task->active)){
@@ -232,13 +238,13 @@ int processing_core_process_packets(void* not_used){
 
 				assert(i == ps->port_id);
 
-				if (task->ports[i].tx_queues_burst[0].len == 0)
+				if (task->tx_mbufs[i].len == 0)
 					continue;
 
 				RTE_LOG(INFO, XDPD, "handle tx of core_id=%d, i=%d, ps->port_id=%d, port->name=%s\n", core_id, i, ps->port_id, port->name);
 				// port_bursts = &task->ports[i];
 				process_port_tx(task, i);
-				task->ports[i].tx_queues_burst[0].len = 0;
+				task->tx_mbufs[i].len = 0;
 			}
 
 #if 0
@@ -277,12 +283,10 @@ int processing_core_process_packets(void* not_used){
 		for (i = 0; i < task->n_rx_queue; ++i) {
 			portid = task->rx_queue_list[i].port_id;
 			queueid = task->rx_queue_list[i].queue_id;
-			port = port_list[portid];
+			port = port_list[portid]; // XXX(toanju) not cache aligned
 
 			if (port == NULL)
 				continue;
-
-			//assert(i == (dpdk_port_state_t *)port->platform_port_state->port_id);
 
 			if (likely(port->up)) { // This CAN happen while deschedulings
 				// Process RX&pipeline

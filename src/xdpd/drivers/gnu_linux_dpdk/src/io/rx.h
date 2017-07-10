@@ -155,6 +155,12 @@ process_port_rx(unsigned int core_id, switch_port_t* port, uint8_t portid, uint8
 			rte_prefetch0(rte_pktmbuf_mtod(pkts_burst[i+1], void *));
 
 		XDPD_DEBUG("calling of_process_packet_pipeline i=%d core_id=%d (%p)\n", i, core_id, pkt);
+
+#if 0
+		unsigned char *tmp = rte_pktmbuf_mtod(pkts_burst[i], unsigned char *);
+		fprintf(stderr, "%d(%d):#%d %x:%x:%x:%x:%x:%x->%x:%x:%x:%x:%x:%x\n", portid, core_id, i, tmp[6], tmp[7],
+			tmp[8], tmp[9], tmp[10], tmp[11], tmp[0], tmp[1], tmp[2], tmp[3], tmp[4], tmp[5]);
+#endif
 		//Send to process
 		of_process_packet_pipeline(core_id, sw, pkt);
 	}

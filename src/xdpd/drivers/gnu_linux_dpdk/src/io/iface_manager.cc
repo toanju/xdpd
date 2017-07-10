@@ -10,6 +10,7 @@
 
 #include <assert.h> 
 extern "C" {
+#include <rte_config.h> 
 #include <rte_common.h> 
 #include <rte_malloc.h> 
 #include <rte_errno.h> 
@@ -37,9 +38,9 @@ extern "C" {
 #define VLAN_ANTI_SPOOF
 #define VLAN_INSERT
 #define VLAN_RX_FILTER
-#define VLAN_STRIP
-#define VLAN_ADD_MAC
-//#define VLAN_SET_MACVLAN_FILTER
+//#define VLAN_STRIP
+//#define VLAN_ADD_MAC
+#define VLAN_SET_MACVLAN_FILTER
 
 struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 
@@ -68,6 +69,7 @@ struct ether_addr port_ether_addr[RTE_MAX_ETHPORTS][ETHER_ADDR_LEN] = {
 static void set_vf_mac_addr(uint8_t port_id, uint16_t vf_id, struct ether_addr *mac_addr)
 {
 	int ret = -ENOTSUP;
+	fprintf(stderr, "%s\n", __FUNCTION__);
 
 	//if (port_id_is_invalid(res->port_id, ENABLED_WARN))
 	//	return;
@@ -91,7 +93,7 @@ static void set_vf_mac_addr(uint8_t port_id, uint16_t vf_id, struct ether_addr *
 		printf("invalid port_id %d\n", port_id);
 		break;
 	case -ENOTSUP:
-		printf("function not implemented\n");
+		printf("%s: function not implemented\n", __FUNCTION__);
 		break;
 	default:
 		printf("programming error: (%s)\n", strerror(-ret));
@@ -105,6 +107,7 @@ static int set_vf_macvlan_filter(uint8_t port_id, uint8_t vf_id, struct ether_ad
 {
 	int ret = -1;
 	struct rte_eth_mac_filter filter;
+	fprintf(stderr, "%s\n", __FUNCTION__);
 
 	assert(filter_type);
 
@@ -148,6 +151,8 @@ static void set_vf_vlan_anti_spoof(uint8_t port_id, uint32_t vf_id, int is_on)
 {
 	int ret = -ENOTSUP;
 
+	fprintf(stderr, "%s\n", __FUNCTION__);
+
 	//if (port_id_is_invalid(port_id, ENABLED_WARN))
 	//	return;
 
@@ -170,7 +175,7 @@ static void set_vf_vlan_anti_spoof(uint8_t port_id, uint32_t vf_id, int is_on)
 		printf("invalid port_id %d\n", port_id);
 		break;
 	case -ENOTSUP:
-		printf("function not implemented\n");
+		printf("%s: function not implemented\n", __FUNCTION__);
 		break;
 	default:
 		printf("programming error: (%s)\n", strerror(-ret));
@@ -182,6 +187,8 @@ static void set_vf_vlan_anti_spoof(uint8_t port_id, uint32_t vf_id, int is_on)
 static void vf_vlan_insert(uint8_t port_id, uint16_t vf_id, uint16_t vlan_id)
 {
 	int ret = -ENOTSUP;
+
+	fprintf(stderr, "%s\n", __FUNCTION__);
 
 	//if (port_id_is_invalid(port_id, ENABLED_WARN))
 	//	return;
@@ -205,7 +212,7 @@ static void vf_vlan_insert(uint8_t port_id, uint16_t vf_id, uint16_t vlan_id)
 		printf("invalid port_id %d\n", port_id);
 		break;
 	case -ENOTSUP:
-		printf("function not implemented\n");
+		printf("%s: function not implemented\n", __FUNCTION__);
 		break;
 	default:
 		printf("programming error: (%s)\n", strerror(-ret));
@@ -218,6 +225,8 @@ static void vf_vlan_insert(uint8_t port_id, uint16_t vf_id, uint16_t vlan_id)
 static void vf_rx_filter_vlan(uint16_t vlan_id, uint8_t port_id, uint64_t vf_mask, int is_add)
 {
 	int ret = -ENOTSUP;
+
+	fprintf(stderr, "%s\n", __FUNCTION__);
 
 	//if (port_id_is_invalid(port_id, ENABLED_WARN))
 	//	return;
@@ -241,7 +250,7 @@ static void vf_rx_filter_vlan(uint16_t vlan_id, uint8_t port_id, uint64_t vf_mas
 		printf("invalid port_id %d\n", port_id);
 		break;
 	case -ENOTSUP:
-		printf("function not implemented or supported\n");
+		printf("%s: function not implemented of supported\n", __FUNCTION__);
 		break;
 	default:
 		printf("programming error: (%s)\n", strerror(-ret));
@@ -254,6 +263,8 @@ static void vf_rx_filter_vlan(uint16_t vlan_id, uint8_t port_id, uint64_t vf_mas
 static void vf_enable_strip_vlan(uint8_t port_id, uint16_t vf_id, int is_on)
 {
 	int ret = -ENOTSUP;
+
+	fprintf(stderr, "%s\n", __FUNCTION__);
 
 	//if (port_id_is_invalid(port_id, ENABLED_WARN))
 	//	return;
@@ -277,7 +288,7 @@ static void vf_enable_strip_vlan(uint8_t port_id, uint16_t vf_id, int is_on)
 		printf("invalid port_id %d\n", port_id);
 		break;
 	case -ENOTSUP:
-		printf("function not implemented\n");
+		printf("%s: function not implemented\n", __FUNCTION__);
 		break;
 	default:
 		printf("programming error: (%s)\n", strerror(-ret));
@@ -302,6 +313,46 @@ static uint8_t get_port_n_rx_queues(const uint8_t port)
 		}
 	}
 	return (uint8_t)(++queue);
+}
+
+static uint8_t get_port_n_tx_queues(const uint8_t lsi_id, const uint8_t port)
+{
+	int queue = 0;
+	uint16_t i;
+
+	for (i = 0; i < nb_lcore_params; ++i) {
+		if (lcore_params[i].lsi_id == lsi_id && lcore_params[i].port_id != port) {
+			queue++;
+		}
+	}
+
+	return (uint8_t)(queue);
+}
+
+static uint8_t get_lsi_id(const uint8_t port_id) {
+	unsigned i;
+
+	for (i = 0; i < nb_lcore_params; ++i) {
+		if (lcore_params[i].port_id == port_id) {
+			return lcore_params[i].lsi_id;
+		}
+	}
+
+	return -1;
+}
+
+static unsigned is_txq_enabled(const uint8_t lsi_id, const uint8_t port_id, const uint8_t lcore_id)
+{
+	unsigned i;
+
+	for (i = 0; i < nb_lcore_params; ++i) {
+		if (lcore_params[i].lsi_id == lsi_id && lcore_params[i].port_id != port_id &&
+		    lcore_params[i].lcore_id == lcore_id) {
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 static int check_lcore_params(void)
@@ -425,7 +476,7 @@ static switch_port_t *configure_port(uint8_t port_id)
 	uint16_t queueid;
 	unsigned lcore_id, nb_ports;
 	uint32_t n_tx_queue, nb_lcores;
-	uint8_t nb_rx_queue, socketid, queue;
+	uint8_t nb_rx_queue, socketid, queue, lsi_id;
 	
 	//Get info
 	rte_eth_dev_info_get(port_id, &dev_info);
@@ -478,18 +529,21 @@ static switch_port_t *configure_port(uint8_t port_id)
 	port_conf.rxmode.enable_scatter = 0; /**< Enable scatter packets rx handler */
 	port_conf.rxmode.enable_lro = 0;     /**< Enable LRO */
 
-	port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
 	port_conf.rxmode.split_hdr_size = 0;
 	port_conf.rxmode.max_rx_pkt_len = IO_MAX_PACKET_SIZE;
 	
+	// rss
+	port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
 	port_conf.rx_adv_conf.rss_conf.rss_key = NULL;
-	port_conf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IP;
+	port_conf.rx_adv_conf.rss_conf.rss_hf = /*ETH_RSS_L2_PAYLOAD |*/ ETH_RSS_IP | ETH_RSS_TCP | ETH_RSS_UDP;
+
 	port_conf.txmode.mq_mode = ETH_MQ_TX_NONE;
 
 	nb_ports = rte_eth_dev_count();
 	nb_lcores = rte_lcore_count();
+	lsi_id = get_lsi_id(port_id);
 	nb_rx_queue = get_port_n_rx_queues(port_id);
-	n_tx_queue = MAX_TX_QUEUE_PER_PORT; // for pf could be rte_lcore_count(); must always equal(=1) for vf
+	n_tx_queue = get_port_n_tx_queues(lsi_id, port_id); // for pf could be rte_lcore_count(); must always equal(=1) for vf
 
 	// check rx
 	if (nb_rx_queue > dev_info.max_rx_queues) {
@@ -501,8 +555,10 @@ static switch_port_t *configure_port(uint8_t port_id)
 			 dev_info.max_tx_queues);
 	}
 
-	if (n_tx_queue > MAX_TX_QUEUE_PER_PORT)
-		n_tx_queue = MAX_TX_QUEUE_PER_PORT;
+	if (n_tx_queue > MAX_TX_QUEUE_PER_PORT) {
+		rte_exit(EXIT_FAILURE, "too many tx queues for port %d: %d\n",
+			 port_id, n_tx_queue);
+	}
 
 	XDPD_INFO("Creating queues: nb_rxq=%d nb_txq=%u...", nb_rx_queue, (unsigned)n_tx_queue);
 
@@ -522,17 +578,22 @@ static switch_port_t *configure_port(uint8_t port_id)
 #endif
 
 	if (!is_zero_ether_addr(port_ether_addr[port_id])) {
-		print_ethaddr(" added:", port_ether_addr[port_id]);
-		ret = rte_eth_dev_mac_addr_add(port_id, port_ether_addr[port_id], 0);
+#ifdef VLAN_ADD_MAC
+		// XXX(tonaju) there is a set mac function as well
+		set_vf_mac_addr(port_parent_id_of_vf[port_id], port_vf_id[port_id], port_ether_addr[port_id]);
+#endif
+		print_ethaddr(" vf-added:", port_ether_addr[port_id]);
+		ret = rte_eth_dev_default_mac_addr_set(port_id, port_ether_addr[port_id]);
+		//ret = rte_eth_dev_mac_addr_add(port_id, port_ether_addr[port_id], 0);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "Cannot configure ether addr: err=%d, port=%d\n", ret, port_id);
 		
-		
-
 		if (port_vf_id[port_id] != -1) {
-			XDPD_INFO(" broadcast:1(port %d, parent %d, vf_id %d)", port_id, port_parent_id_of_vf[port_id],
-				  port_vf_id[port_id]);
+			fprintf(stderr,
+				"params: port_id=%d, port_parent_id_of_vf=%d, port_vf_id=%d, port_pvid=%d\n",
+				port_id, port_parent_id_of_vf[port_id], port_vf_id[port_id], port_pvid[port_id]);
 
+			fprintf(stderr, "calling rte_eth_dev_mac_addr_add\n");
 			ret = rte_eth_dev_mac_addr_add(port_parent_id_of_vf[port_id], port_ether_addr[port_id],
 						       port_vf_id[port_id]);
 			if (ret < 0)
@@ -540,12 +601,16 @@ static switch_port_t *configure_port(uint8_t port_id)
 					 "Cannot configure mac on vf: err=%d, port=%d, parent=%d, vf_id=%d\n", ret,
 					 port_id, port_parent_id_of_vf[port_id], port_vf_id[port_id]);
 
+#if 0
+			XDPD_INFO(" broadcast:1(port %d, parent %d, vf_id %d)", port_id, port_parent_id_of_vf[port_id],
+				  port_vf_id[port_id]);
 			ret = rte_pmd_i40e_set_vf_broadcast(port_parent_id_of_vf[port_id], port_vf_id[port_id], 1);
 			if (ret < 0)
 				rte_exit(EXIT_FAILURE,
 					 "Cannot configure broadcast: err=%d, port=%d, parent=%d, vf_id=%d\n", ret,
 					 port_id, port_parent_id_of_vf[port_id], port_vf_id[port_id]);
 
+#endif
 #ifdef VLAN_ANTI_SPOOF
 			set_vf_vlan_anti_spoof(port_parent_id_of_vf[port_id], port_vf_id[port_id], 0);
 #endif
@@ -553,23 +618,19 @@ static switch_port_t *configure_port(uint8_t port_id)
 			vf_vlan_insert(port_parent_id_of_vf[port_id], port_vf_id[port_id], port_pvid[port_id]);
 #endif
 #ifdef VLAN_RX_FILTER
-			vf_rx_filter_vlan(port_pvid[port_id], port_parent_id_of_vf[port_id], 0x03, 1);
+			vf_rx_filter_vlan(port_pvid[port_id], port_parent_id_of_vf[port_id],
+					  1ULL << port_vf_id[port_id], 1);
 #endif
 #ifdef VLAN_STRIP
 			vf_enable_strip_vlan(port_parent_id_of_vf[port_id], port_vf_id[port_id], 1);
-#endif
-#ifdef VLAN_ADD_MAC
-			// XXX(tonaju) there is a set mac function as well
-			set_vf_mac_addr(port_parent_id_of_vf[port_id], port_vf_id[port_id], port_ether_addr[port_id]);
 #endif
 #ifdef VLAN_SET_MACVLAN_FILTER
 			set_vf_macvlan_filter(port_parent_id_of_vf[port_id], port_vf_id[port_id],
 					      port_ether_addr[port_id], "exact-mac-vlan", 1);
 #endif
 		}
+			fflush(stderr);
 	}
-
-	//set_vf_macvlan();
 
 	//Recover MAC address
 	rte_eth_macaddr_get(port_id, &ports_eth_addr[port_id]);
@@ -580,32 +641,36 @@ static switch_port_t *configure_port(uint8_t port_id)
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "init_mem failed\n");
 
-#if 0 // PF can do so
+#if 1
 	/* init one TX queue per couple (lcore,port) */
 	queueid = 0;
 	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
 		if (rte_lcore_is_enabled(lcore_id) == 0)
 			continue;
 
+		if (0 == is_txq_enabled(lsi_id, port_id, lcore_id))
+			continue;
+
 		if (numa_on)
-			socketid =
-					(uint8_t)rte_lcore_to_socket_id(lcore_id);
+			socketid = (uint8_t)rte_lcore_to_socket_id(lcore_id);
 		else
 			socketid = 0;
 
-		printf("txq=%u,%d,%d ", lcore_id, queueid, socketid);
-		fflush(stdout);
+		XDPD_INFO("txq: port_id=%d, queue_id=%d, socket_id=%d, lcore_id=%d, nb_txd=%d\n", port_id, queueid,
+			  socketid, lcore_id, nb_txd);
 
 		rte_eth_dev_info_get(port_id, &dev_info);
 		txconf = &dev_info.default_txconf;
+
 		if (port_conf.rxmode.jumbo_frame)
 			txconf->txq_flags = 0;
-		ret = rte_eth_tx_queue_setup(port_id, queueid, nb_txd,
-				socketid, txconf);
+
+		ret = rte_eth_tx_queue_setup(port_id, queueid, nb_txd, socketid, txconf);
+
 		if (ret < 0)
-			rte_exit(EXIT_FAILURE,
-					"rte_eth_tx_queue_setup: err=%d, "
-					"port=%d\n", ret, port_id);
+			rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup: err=%d, "
+					       "port=%d\n",
+				 ret, port_id);
 
 		qconf = &processing_core_tasks[lcore_id];
 		qconf->tx_queue_id[port_id] = queueid;
@@ -699,7 +764,6 @@ static switch_port_t *configure_port(uint8_t port_id)
 		if (rte_lcore_is_enabled(lcore_id) == 0)
 			continue;
 		qconf = &processing_core_tasks[lcore_id];
-		qconf->tx_queue_id = 0;
 
 		XDPD_INFO("\nInitializing rx queues on lcore %u ... ", lcore_id);
 		/* init RX queues */

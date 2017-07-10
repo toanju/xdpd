@@ -34,12 +34,14 @@ struct mbuf_burst {
 	struct rte_mbuf *burst[IO_IFACE_MAX_PKT_BURST];
 };
 
+#if 0 /* XXX(toanju) disable queues for now */
 // Port queues
 typedef struct port_bursts{
 	//This are TX-queues of a port
 	unsigned int core_id; //core id serving RX/TX on this port
 	struct mbuf_burst tx_queues_burst[IO_IFACE_NUM_QUEUES];
 }port_bursts_t;
+#endif
 
 /**
 * Core task list
@@ -52,15 +54,11 @@ typedef struct core_tasks{
 	uint16_t n_rx_queue;
 	struct lcore_rx_queue rx_queue_list[MAX_RX_QUEUE_PER_LCORE];
 	uint16_t n_tx_port;
-#if 0
 	uint16_t tx_port_id[RTE_MAX_ETHPORTS];
 	uint16_t tx_queue_id[RTE_MAX_ETHPORTS];
-#else
-	uint16_t tx_queue_id;
-#endif
 
 	//This are the TX-queues for ALL ports in the system; index is port_id
-	port_bursts_t ports[PROCESSING_MAX_PORTS];
+	struct mbuf_burst tx_mbufs[RTE_MAX_ETHPORTS];
 } __rte_cache_aligned core_tasks_t;
 
 /**
