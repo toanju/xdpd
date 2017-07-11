@@ -317,13 +317,25 @@ static uint8_t get_port_n_rx_queues(const uint8_t port)
 
 static uint8_t get_port_n_tx_queues(const uint8_t lsi_id, const uint8_t port)
 {
-	int queue = 0;
+	int queue_cnt[RTE_MAX_LCORE];
 	uint16_t i;
+	uint8_t lcore_id;
+	int queue = 0;
+
+	memset(&queue_cnt, 0, sizeof(queue_cnt));
 
 	for (i = 0; i < nb_lcore_params; ++i) {
-		if (lcore_params[i].lsi_id == lsi_id && lcore_params[i].port_id != port) {
+		if (lcore_params[i].lsi_id == lsi_id && lcore_params[i].port_id != port)
+			queue_cnt[lcore_params[i].lcore_id]++;
+	}
+
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		if (queue_cnt[lcore_id])
 			queue++;
-		}
+	}
+
+	if (queue > MAX_TX_QUEUE_PER_PORT) {
+		rte_exit(EXIT_FAILURE, "too many tx queues for port %d: %d\n", port, queue);
 	}
 
 	return (uint8_t)(queue);
@@ -550,14 +562,10 @@ static switch_port_t *configure_port(uint8_t port_id)
 		rte_exit(EXIT_FAILURE, "Fail: nb_rx_queue(%d) is greater than max_rx_queues(%d)\n", nb_rx_queue,
 			 dev_info.max_rx_queues);
 	}
+
 	if (n_tx_queue > dev_info.max_tx_queues) {
 		rte_exit(EXIT_FAILURE, "Fail: n_tx_queue(%d) is greater than max_tx_queues(%d)\n", n_tx_queue,
 			 dev_info.max_tx_queues);
-	}
-
-	if (n_tx_queue > MAX_TX_QUEUE_PER_PORT) {
-		rte_exit(EXIT_FAILURE, "too many tx queues for port %d: %d\n",
-			 port_id, n_tx_queue);
 	}
 
 	XDPD_INFO("Creating queues: nb_rxq=%d nb_txq=%u...", nb_rx_queue, (unsigned)n_tx_queue);
