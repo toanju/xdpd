@@ -297,6 +297,48 @@ static void vf_enable_strip_vlan(uint8_t port_id, uint16_t vf_id, int is_on)
 }
 #endif
 
+#ifdef USE_INPUT_FILTER_SET
+static int set_hash_input_set(uint8_t port_id, enum rte_filter_input_set_op op, uint16_t type,
+		      enum rte_eth_input_set_field inset)
+{
+	struct rte_eth_hash_filter_info info;
+
+	memset(&info, 0, sizeof(info));
+	info.info_type = RTE_ETH_HASH_FILTER_INPUT_SET_SELECT;
+	info.info.input_set_conf.flow_type = type;
+	info.info.input_set_conf.field[0] = inset;
+	info.info.input_set_conf.inset_size = 1;
+	info.info.input_set_conf.op = op;
+
+	return rte_eth_dev_filter_ctrl(port_id, RTE_ETH_FILTER_HASH, RTE_ETH_FILTER_SET, &info);
+}
+
+static int set_hash_global_config(uint8_t port_id, enum rte_eth_hash_function hash_func, uint32_t type, int enable)
+{
+	struct rte_eth_hash_filter_info info;
+	uint32_t idx, offset;
+	int ret;
+
+	if ((ret = rte_eth_dev_filter_supported(port_id, RTE_ETH_FILTER_HASH)) < 0) {
+		printf("RTE_ETH_FILTER_HASH not supported on port %d\n", port_id);
+		return ret;
+	}
+
+	memset(&info, 0, sizeof(info));
+	info.info_type = RTE_ETH_HASH_FILTER_GLOBAL_CONFIG;
+	info.info.global_conf.hash_func = hash_func;
+
+	idx = type / (CHAR_BIT * sizeof(uint32_t));
+	offset = type % (CHAR_BIT * sizeof(uint32_t));
+	info.info.global_conf.valid_bit_mask[idx] |= (1UL << offset);
+
+	if (enable)
+		info.info.global_conf.sym_hash_enable_mask[idx] |= (1UL << offset);
+
+	return rte_eth_dev_filter_ctrl(port_id, RTE_ETH_FILTER_HASH, RTE_ETH_FILTER_SET, &info);
+}
+#endif
+
 static uint8_t get_port_n_rx_queues(const uint8_t port)
 {
 	int queue = -1;
@@ -636,8 +678,52 @@ static switch_port_t *configure_port(uint8_t port_id)
 			set_vf_macvlan_filter(port_parent_id_of_vf[port_id], port_vf_id[port_id],
 					      port_ether_addr[port_id], "exact-mac-vlan", 1);
 #endif
+
+#ifdef USE_INPUT_FILTER_SET
+			ret = set_hash_input_set(port_id, RTE_ETH_INPUT_SET_SELECT, RTE_ETH_FLOW_NONFRAG_IPV4_TCP, RTE_ETH_INPUT_SET_L3_SRC_IP4);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "Cannot configure hash input set select "
+						       "RTE_ETH_FLOW_NONFRAG_IPV4_TCP, RTE_ETH_INPUT_SET_L3_SRC_IP4: "
+						       "err=%d, port=%d\n",
+					 ret, port_id);
+			ret = set_hash_input_set(port_id, RTE_ETH_INPUT_SET_ADD, RTE_ETH_FLOW_NONFRAG_IPV4_TCP, RTE_ETH_INPUT_SET_L3_DST_IP4);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "Cannot configure hash input set add "
+						       "RTE_ETH_FLOW_NONFRAG_IPV4_TCP, RTE_ETH_INPUT_SET_L3_DST_IP4: "
+						       "err=%d, port=%d\n",
+					 ret, port_id);
+
+			ret = set_hash_input_set(port_id, RTE_ETH_INPUT_SET_SELECT, RTE_ETH_FLOW_NONFRAG_IPV4_UDP, RTE_ETH_INPUT_SET_L3_SRC_IP4);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "Cannot configure hash input set select "
+						       "RTE_ETH_FLOW_NONFRAG_IPV4_UDP, RTE_ETH_INPUT_SET_L3_SRC_IP4: "
+						       "err=%d, port=%d\n",
+					 ret, port_id);
+			ret = set_hash_input_set(port_id, RTE_ETH_INPUT_SET_ADD, RTE_ETH_FLOW_NONFRAG_IPV4_UDP, RTE_ETH_INPUT_SET_L3_DST_IP4);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE, "Cannot configure hash input set add "
+						       "RTE_ETH_FLOW_NONFRAG_IPV4_UDP, RTE_ETH_INPUT_SET_L3_DST_IP4: "
+						       "err=%d, port=%d\n",
+					 ret, port_id);
+
+			ret = set_hash_global_config(port_id, RTE_ETH_HASH_FUNCTION_DEFAULT, RTE_ETH_FLOW_FRAG_IPV4, 1);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE,
+					 "Cannot configure hash global config frag IPv4: err=%d, port=%d\n", ret,
+					 port_id);
+			ret = set_hash_global_config(port_id, RTE_ETH_HASH_FUNCTION_DEFAULT, RTE_ETH_FLOW_NONFRAG_IPV4_TCP, 1);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE,
+					 "Cannot configure hash global config nonfrag IPv4 TCP: err=%d, port=%d\n", ret,
+					 port_id);
+			ret = set_hash_global_config(port_id, RTE_ETH_HASH_FUNCTION_DEFAULT, RTE_ETH_FLOW_NONFRAG_IPV4_UDP, 1);
+			if (ret < 0)
+				rte_exit(EXIT_FAILURE,
+					 "Cannot configure hash global config nonfrag IPv4 UDP: err=%d, port=%d\n", ret,
+					 port_id);
+#endif
 		}
-			fflush(stderr);
+		fflush(stderr);
 	}
 
 	//Recover MAC address
