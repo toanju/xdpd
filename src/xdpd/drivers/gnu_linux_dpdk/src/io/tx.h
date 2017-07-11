@@ -23,6 +23,8 @@
 #include "iface_manager.h"
 #include "../processing/processing.h"
 
+#define TX_SHORTCUT 1
+
 namespace xdpd {
 namespace gnu_linux_dpdk {
 
@@ -94,6 +96,50 @@ flush_port_queue_tx_burst(switch_port_t* port, unsigned int port_id, struct mbuf
 
 	//Reset queue size
 	queue->len = 0;
+}
+#endif
+
+#ifdef TX_SHORTCUT
+static inline int send_burst(core_tasks_t *qconf, uint16_t n, uint8_t port)
+{
+	struct rte_mbuf **m_table;
+	int ret;
+	uint16_t queueid;
+
+	queueid = qconf->tx_queue_id[port];
+	m_table = (struct rte_mbuf **)qconf->tx_mbufs[port].burst;
+
+	ret = rte_eth_tx_burst(port, queueid, m_table, n);
+
+	if (unlikely(ret < n)) {
+		do {
+			rte_pktmbuf_free(m_table[ret]);
+		} while (++ret < n);
+	}
+
+	return 0;
+}
+
+inline void send_single_packet(struct rte_mbuf *m, uint8_t port)
+{
+	uint32_t lcore_id;
+	uint16_t len;
+	core_tasks_t *qconf;
+
+	lcore_id = rte_lcore_id();
+
+	qconf = &processing_core_tasks[lcore_id];
+	len = qconf->tx_mbufs[port].len;
+	qconf->tx_mbufs[port].burst[len] = m;
+	len++;
+
+	/* enough pkts to be sent */
+	if (unlikely(len == IO_IFACE_MAX_PKT_BURST)) {
+		send_burst(qconf, IO_IFACE_MAX_PKT_BURST, port);
+		len = 0;
+	}
+
+	qconf->tx_mbufs[port].len = len;
 }
 #endif
 
