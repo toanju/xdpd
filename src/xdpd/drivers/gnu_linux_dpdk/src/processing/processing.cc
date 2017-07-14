@@ -177,6 +177,9 @@ int processing_core_process_packets(void* not_used){
         uint64_t diff_tsc, prev_tsc, cur_tsc;
 	struct rte_mbuf* pkt_burst[IO_IFACE_MAX_PKT_BURST]={0};
 	core_tasks_t* task = &processing_core_tasks[core_id];
+#ifdef TX_SHORTCUT
+	int nb_rx, j;
+#endif
 
 	//Time to drain in tics
 	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S * IO_BURST_TX_DRAIN_US;
@@ -283,6 +286,36 @@ int processing_core_process_packets(void* not_used){
 		for (i = 0; i < task->n_rx_queue; ++i) {
 			portid = task->rx_queue_list[i].port_id;
 			queueid = task->rx_queue_list[i].queue_id;
+
+
+#ifdef TX_SHORTCUT
+
+#define PREFETCH_OFFSET 3
+
+			// all traffic from 2 goes directly to 1
+			if (portid == 2) {
+				nb_rx = rte_eth_rx_burst(portid, queueid, pkt_burst, IO_IFACE_MAX_PKT_BURST);
+				if (nb_rx == 0)
+					continue;
+
+				/* Prefetch first packets */
+				for (j = 0; j < PREFETCH_OFFSET && j < nb_rx; j++) {
+					rte_prefetch0(rte_pktmbuf_mtod(pkt_burst[j], void *));
+				}
+
+				/* Prefetch and forward already prefetched packets */
+				for (j = 0; j < (nb_rx - PREFETCH_OFFSET); j++) {
+					rte_prefetch0(rte_pktmbuf_mtod(pkt_burst[j + PREFETCH_OFFSET], void *));
+					send_single_packet(pkt_burst[j], 1);
+				}
+
+				/* Forward remaining prefetched packets */
+				for (; j < nb_rx; j++) {
+					send_single_packet(pkt_burst[j], 1);
+				}
+			}
+#endif
+
 			port = port_list[portid]; // XXX(toanju) not cache aligned
 
 			if (port == NULL)
