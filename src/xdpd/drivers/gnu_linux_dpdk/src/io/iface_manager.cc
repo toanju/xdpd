@@ -35,12 +35,13 @@ extern "C" {
 #define MEMPOOL_CACHE_SIZE 256
 #define MAX_PKT_BURST 32
 
-#define VLAN_ANTI_SPOOF
+//#define VLAN_ANTI_SPOOF
 #define VLAN_INSERT
 #define VLAN_RX_FILTER
-//#define VLAN_STRIP
+#define VLAN_STRIP
 //#define VLAN_ADD_MAC
 #define VLAN_SET_MACVLAN_FILTER
+//#define USE_INPUT_FILTER_SET
 
 struct ether_addr ports_eth_addr[RTE_MAX_ETHPORTS];
 
