@@ -28,12 +28,11 @@ extern "C" {
 #include <set>
 
 #define NB_MBUF                                                                                                        \
-	RTE_MAX((nb_ports * nb_rx_queue * RTE_RX_DESC_DEFAULT + nb_ports * nb_lcores * MAX_PKT_BURST +                 \
+	RTE_MAX((nb_ports * nb_rx_queue * RTE_RX_DESC_DEFAULT + nb_ports * nb_lcores * IO_IFACE_MAX_PKT_BURST +        \
 		 nb_ports * n_tx_queue * RTE_TX_DESC_DEFAULT + nb_lcores * MEMPOOL_CACHE_SIZE),                        \
 		(unsigned)8192)
 
 #define MEMPOOL_CACHE_SIZE 256
-#define MAX_PKT_BURST 32
 
 //#define VLAN_ANTI_SPOOF
 #define VLAN_INSERT
